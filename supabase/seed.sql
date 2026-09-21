@@ -52,3 +52,15 @@ insert into option_values (id, option_id, name_en, name_es) values
   ('fv-vanilla-cake', 'opt-cake-flavor', 'Vanilla', 'Vainilla'),
   ('fv-red-velvet', 'opt-cake-flavor', 'Red velvet', 'Red velvet')
 on conflict (id) do nothing;
+
+insert into promo_codes (code, kind, value, min_food_cents) values
+  ('SWEET10', 'percent', 10, 0),
+  ('BITE5', 'fixed', 500, 2500)
+on conflict (code) do nothing;
+
+insert into weekly_offers (id, sort, active, image_url, tag_en, tag_es, title_en, title_es, offer_en, offer_es, cta_href) values
+  ('offer-cookie-dozen', 1, true, '/test-images/swb-banner.png', 'This week', 'Esta semana', 'Cookie dozen deal', 'Docena de galletas', 'Buy 11, get 12 — mix any flavors from the menu.', 'Compra 11, lleva 12 — mezcla los sabores del menú.', '/order'),
+  ('offer-brownie-bundle', 2, true, '/test-images/img-1128.jpeg', 'This week', 'Esta semana', 'Brownie bundle', 'Pack de brownies', 'Three fudge brownies for $14 — perfect for sharing.', 'Tres brownies de fudge por $14 — ideal para compartir.', '/order'),
+  ('offer-cinnamon', 3, true, '/test-images/photoroom-140123.jpg', 'This week', 'Esta semana', 'Weekend cinnamon rolls', 'Rollos de canela del finde', 'Fresh-baked Saturday & Sunday — pre-order by Friday noon.', 'Horneados sábado y domingo — reserva antes del viernes al mediodía.', '/order'),
+  ('offer-pickup', 4, true, '/test-images/photoroom-140003.jpg', 'This week', 'Esta semana', 'Free pickup over $30', 'Recogida gratis desde $30', 'Skip the delivery fee when you pick up at our kitchen.', 'Sin cargo de entrega cuando recoges en nuestra cocina.', '/order')
+on conflict (id) do nothing;

@@ -5,16 +5,76 @@
 import { existsSync, unlinkSync } from "fs";
 import { join } from "path";
 import { submitOrder, getOrder } from "../lib/orders";
+import { quotePromo } from "../lib/promos";
+import { customerOrderEmail, ownerOrderEmail } from "../lib/order-email";
+import { canCustomerCancel } from "../lib/types";
 
 const LOCAL_FILE = join(process.cwd(), ".local-orders.json");
 
+function assert(cond: unknown, msg: string): asserts cond {
+  if (!cond) throw new Error(msg);
+}
+
 async function main() {
+  const sweet10 = quotePromo(
+    { code: "SWEET10", kind: "percent", value: 10, minFoodCents: 0, active: true, expiresAt: null },
+    1890,
+  );
+  assert(sweet10.ok && sweet10.discountCents === 189, "SWEET10 should be 10% of 1890");
+
+  const biteLow = quotePromo(
+    { code: "BITE5", kind: "fixed", value: 500, minFoodCents: 2500, active: true, expiresAt: null },
+    1890,
+  );
+  assert(!biteLow.ok && biteLow.error === "min_order", "BITE5 should require $25 food");
+
+  const biteOk = quotePromo(
+    { code: "BITE5", kind: "fixed", value: 500, minFoodCents: 2500, active: true, expiresAt: null },
+    2500,
+  );
+  assert(biteOk.ok && biteOk.discountCents === 500, "BITE5 should take $5 off $25");
+
+  assert(!quotePromo(null, 2000).ok, "Missing code should be invalid");
+
+  const sample = {
+    id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    lang: "en" as const,
+    fulfillment: "pickup" as const,
+    customerName: "Maya",
+    customerEmail: "maya@example.com",
+    phone: "4165550100",
+    foodCents: 700,
+    shippingCents: 0,
+    discountCents: 70,
+    totalCents: 630,
+    promoCode: "SWEET10",
+    items: [
+      {
+        lineId: "1",
+        productId: "prod-choc-chip",
+        slug: "brown-butter-chocolate-chip",
+        nameEn: "Brown butter chocolate chip",
+        nameEs: "Chip de chocolate",
+        qty: 2,
+        unitPriceCents: 350,
+        imageUrl: "",
+        optionsJson: {},
+      },
+    ],
+    siteUrl: "http://localhost:3000",
+  };
+  const buyer = customerOrderEmail(sample);
+  assert(buyer.text.includes("Maya") && buyer.text.includes("$6.30"), "buyer email should name + total");
+  const shopMail = ownerOrderEmail(sample);
+  assert(shopMail.text.includes("maya@example.com") && shopMail.text.includes("Open:"), "owner email should include contact + link");
+
   if (existsSync(LOCAL_FILE)) unlinkSync(LOCAL_FILE);
 
   const result = await submitOrder({
     fulfillment: "ship",
     lang: "en",
     customerName: "Self Check",
+    customerEmail: "self-check@example.com",
     phone: "4165550100",
     shipStreet: "100 Main St",
     shipCity: "Vancouver",
@@ -57,6 +117,41 @@ async function main() {
   if (order.fulfillment === "ship") {
     console.log(`OK: shipment stub service=${order.serviceCode} rate=${order.shippingCents}c`);
   }
+
+  const promoResult = await submitOrder({
+    fulfillment: "pickup",
+    lang: "en",
+    customerName: "Self Check",
+    customerEmail: "self-check@example.com",
+    phone: "4165550100",
+    foodCents: 1890,
+    shippingCents: 0,
+    totalCents: 1890,
+    promoCode: "sweet10",
+    items: [
+      {
+        lineId: "test-line-promo",
+        productId: "prod-brownie-box",
+        slug: "brownie-box-of-4",
+        nameEn: "Brownie box of 4",
+        nameEs: "Caja de 4 brownies",
+        qty: 1,
+        unitPriceCents: 1890,
+        imageUrl: "",
+        optionsJson: {},
+      },
+    ],
+  });
+  const promoOrder = await getOrder(promoResult.id);
+  if (!promoOrder) throw new Error("Promo order not found");
+  if (promoOrder.promoCode !== "SWEET10") throw new Error("Expected SWEET10 on order");
+  if (promoOrder.discountCents !== 189) throw new Error(`Expected 189c off, got ${promoOrder.discountCents}`);
+  if (promoOrder.totalCents !== 1701) throw new Error(`Expected 1701c total, got ${promoOrder.totalCents}`);
+  console.log(`OK: promo ${promoOrder.promoCode} discount=${promoOrder.discountCents}c total=${promoOrder.totalCents}c`);
+
+  assert(canCustomerCancel("pending") && canCustomerCancel("ready"), "Customer can cancel pending/ready");
+  assert(!canCustomerCancel("completed") && !canCustomerCancel("sent"), "Customer cannot cancel finished orders");
+  assert(!canCustomerCancel("cancelled"), "Already cancelled is not cancellable");
 }
 
 main().catch((err) => {

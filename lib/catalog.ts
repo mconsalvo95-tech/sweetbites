@@ -249,14 +249,6 @@ export function getProductBySlug(slug: string): Product | undefined {
   return PRODUCTS.find((p) => p.slug === slug);
 }
 
-export function getProductsByCategory(categoryId: string): Product[] {
-  return PRODUCTS.filter((p) => p.categoryId === categoryId);
-}
-
-export function getCategoryBySlug(slug: string): Category | undefined {
-  return CATEGORIES.find((c) => c.slug === slug);
-}
-
 export async function fetchCatalog(): Promise<{ categories: Category[]; products: Product[] }> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -330,4 +322,17 @@ export async function fetchCatalog(): Promise<{ categories: Category[]; products
   } catch {
     return { categories: CATEGORIES, products: PRODUCTS };
   }
+}
+
+export async function getLiveProductBySlug(slug: string): Promise<Product | undefined> {
+  const { products } = await fetchCatalog();
+  return products.find((p) => p.slug === slug) ?? getProductBySlug(slug);
+}
+
+export function getProductsByCategory(categoryId: string): Product[] {
+  return PRODUCTS.filter((p) => p.categoryId === categoryId);
+}
+
+export function getCategoryBySlug(slug: string): Category | undefined {
+  return CATEGORIES.find((c) => c.slug === slug);
 }

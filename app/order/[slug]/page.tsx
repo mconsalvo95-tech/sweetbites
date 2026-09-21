@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getProductBySlug } from "@/lib/catalog";
+import { getLiveProductBySlug } from "@/lib/catalog";
 import { ProductDetail } from "./ProductDetail";
 
 export default async function ProductPage({
@@ -8,7 +8,7 @@ export default async function ProductPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const product = getProductBySlug(slug);
+  const product = await getLiveProductBySlug(slug);
   if (!product) notFound();
   return <ProductDetail product={product} />;
 }

@@ -1,43 +1,59 @@
 "use client";
 
-import { Fraunces, Source_Sans_3 } from "next/font/google";
+import { Lilita_One, Montserrat } from "next/font/google";
+import { usePathname } from "next/navigation";
 import { Header } from "@/components/Header";
+import { Footer } from "@/components/Footer";
+import { ContactModalProvider } from "@/components/ContactModal";
+import { AuthProvider } from "@/lib/auth";
 import { CartProvider } from "@/lib/cart";
-import { LangProvider, useLang } from "@/lib/lang";
+import { LangProvider } from "@/lib/lang";
 import "./globals.css";
 
-const fraunces = Fraunces({
+const lilita = Lilita_One({
   subsets: ["latin"],
-  variable: "--font-fraunces",
+  weight: "400",
+  variable: "--font-lilita",
   display: "swap",
 });
 
-const sourceSans = Source_Sans_3({
+const montserrat = Montserrat({
   subsets: ["latin"],
-  variable: "--font-source-sans",
+  variable: "--font-montserrat",
   display: "swap",
 });
 
 function Shell({ children }: { children: React.ReactNode }) {
-  const { lang } = useLang();
+  const pathname = usePathname();
+  const isHome = pathname === "/";
+
   return (
-    <>
-      <Header lang={lang} />
-      <main className="mx-auto min-h-[calc(100vh-57px)] max-w-[480px] px-4 pb-24 pt-6">
+    <div className="relative z-10">
+      <Header />
+      <main
+        className={`min-h-[calc(100vh-72px)] pb-24 ${
+          isHome ? "" : "mx-auto max-w-6xl px-4 pt-6"
+        }`}
+      >
         {children}
       </main>
-    </>
+      <Footer />
+    </div>
   );
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${fraunces.variable} ${sourceSans.variable}`}>
+    <html lang="en" className={`${lilita.variable} ${montserrat.variable}`}>
       <body className="antialiased">
         <LangProvider>
-          <CartProvider>
-            <Shell>{children}</Shell>
-          </CartProvider>
+          <AuthProvider>
+            <CartProvider>
+              <ContactModalProvider>
+                <Shell>{children}</Shell>
+              </ContactModalProvider>
+            </CartProvider>
+          </AuthProvider>
         </LangProvider>
       </body>
     </html>

@@ -34,3 +34,5 @@ export function normalizePostal(code: string): string {
 export function isValidCanadianPostal(code: string): boolean {
   return CANADIAN_POSTAL.test(code.trim());
 }
+
+export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

@@ -39,7 +39,8 @@ function loadCart(): CartLine[] {
 
 function loadFulfillment(): Fulfillment {
   const raw = localStorage.getItem(FULFILLMENT_KEY);
-  return raw === "ship" ? "ship" : "pickup";
+  if (raw === "ship" || raw === "delivery") return raw;
+  return "pickup";
 }
 
 export function CartProvider({ children }: { children: ReactNode }) {
