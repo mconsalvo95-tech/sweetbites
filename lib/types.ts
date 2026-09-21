@@ -1,6 +1,6 @@
 export type Lang = "en" | "es";
 
-export type Fulfillment = "pickup" | "ship";
+export type Fulfillment = "pickup" | "delivery" | "ship";
 
 export type Category = {
   id: string;
@@ -79,6 +79,7 @@ export type OrderRecord = {
   fulfillment: Fulfillment;
   lang: Lang;
   customerName: string;
+  customerEmail: string;
   phone: string;
   shipStreet?: string;
   shipCity?: string;
@@ -88,8 +89,14 @@ export type OrderRecord = {
   foodCents: number;
   shippingCents: number;
   totalCents: number;
+  discountCents?: number;
+  promoCode?: string;
   items: CartLine[];
   serviceCode?: string;
   serviceNameEn?: string;
   serviceNameEs?: string;
 };
+
+export function canCustomerCancel(status: string) {
+  return status === "pending" || status === "ready";
+}

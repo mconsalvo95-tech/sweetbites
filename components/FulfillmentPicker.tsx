@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+
 import { useLang } from "@/lib/lang";
 import { useCart } from "@/lib/cart";
 import { t } from "@/lib/format";
+
 import type { Fulfillment } from "@/lib/types";
 
 export function FulfillmentPicker() {
@@ -17,6 +19,13 @@ export function FulfillmentPicker() {
       titleEs: "Recoger",
       descEn: "Collect at our Toronto shop",
       descEs: "Recoge en nuestra tienda de Toronto",
+    },
+    {
+      value: "delivery",
+      titleEn: "Local delivery",
+      titleEs: "Entrega local",
+      descEn: "Toronto-area delivery, flat $6",
+      descEs: "Entrega en Toronto, $6 fijo",
     },
     {
       value: "ship",
@@ -36,16 +45,16 @@ export function FulfillmentPicker() {
             key={opt.value}
             type="button"
             onClick={() => setFulfillment(opt.value)}
-            className={`rounded-[18px] border-2 p-4 text-left transition-colors ${
+            className={`fulfillment-card rounded-[18px] border-2 p-4 text-left ${
               selected
-                ? "border-[#C45C26] bg-white shadow-sm"
+                ? "fulfillment-card-selected"
                 : "border-transparent bg-white/70 hover:bg-white"
             }`}
           >
-            <p className="font-display text-lg font-semibold text-[#2B1E14]">
+            <p className="font-display text-lg uppercase text-coal">
               {lang === "es" ? opt.titleEs : opt.titleEn}
             </p>
-            <p className="mt-1 text-sm text-[#2B1E14]/70">
+            <p className="mt-1 text-sm text-coal/70">
               {lang === "es" ? opt.descEs : opt.descEn}
             </p>
           </button>
@@ -60,7 +69,7 @@ export function HomeCta() {
   return (
     <Link
       href="/order"
-      className="inline-block rounded-full bg-[#C45C26] px-8 py-3.5 text-center font-semibold text-white shadow-md transition-transform hover:scale-[1.02]"
+      className="btn-primary inline-block rounded-full bg-berry px-8 py-3.5 text-center font-semibold text-white shadow-md hover:bg-berry-hover"
     >
       {t("Start your order", "Empezar pedido", lang)}
     </Link>

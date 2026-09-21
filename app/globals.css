@@ -1,21 +1,46 @@
 @import "tailwindcss";
 
 @theme inline {
-  --color-cream: #F6F0E6;
-  --color-cocoa: #2B1E14;
-  --color-accent: #C45C26;
-  --font-display: var(--font-fraunces);
-  --font-sans: var(--font-source-sans);
+  --color-blush: #e7aca7;
+  --color-mint: #97d3ba;
+  --color-berry: #aa1d50;
+  --color-berry-hover: #8f1744;
+  --color-cream: #f4f0ec;
+  --color-coal: #323335;
+  --color-surface: #f4f0ec;
+  --color-banner: #e7aca7;
+  --color-cocoa: #323335;
+  --color-accent: #aa1d50;
+  --color-accent-hover: #8f1744;
+  --color-border: #e7aca7;
+  --font-display: var(--font-lilita);
+  --font-sans: var(--font-montserrat);
 }
 
 body {
+  position: relative;
   background: var(--color-cream);
-  color: var(--color-cocoa);
+  color: var(--color-coal);
   font-family: var(--font-sans), system-ui, sans-serif;
 }
 
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: url(/logos/watermark.svg) center / min(340px, 72vw) no-repeat;
+  opacity: 0.09;
+  pointer-events: none;
+  z-index: 0;
+}
+
 .font-display {
-  font-family: var(--font-display), Georgia, serif;
+  font-family: var(--font-display), system-ui, sans-serif;
+  letter-spacing: 0.04em;
+}
+
+.font-display-pink {
+  color: var(--color-berry);
 }
 
 .scrollbar-hide {
@@ -29,4 +54,240 @@ body {
 
 input, select, textarea, button {
   font-family: inherit;
+}
+
+/* --- Playful motion (CSS only) --- */
+
+@keyframes hero-enter {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes chip-spring {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+
+@keyframes cart-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(calc(100% + 1rem));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.hero-enter {
+  animation: hero-enter 0.65s ease-out both;
+}
+
+.wordmark-link {
+  position: relative;
+  display: inline-block;
+  letter-spacing: 0.06em;
+  transition: color 0.2s ease, letter-spacing 0.25s ease;
+}
+
+.wordmark-link::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  width: 0;
+  height: 2px;
+  background: var(--color-berry);
+  transition: width 0.25s ease;
+}
+
+.wordmark-link:hover {
+  color: var(--color-berry-hover);
+  letter-spacing: 0.1em;
+}
+
+.wordmark-link:hover::after {
+  width: 100%;
+}
+
+.chip-btn {
+  transition:
+    transform 0.18s cubic-bezier(0.34, 1.4, 0.64, 1),
+    background-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.chip-btn:active {
+  transform: scale(0.94);
+}
+
+.chip-btn-active {
+  animation: chip-spring 0.38s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.product-card {
+  transition:
+    transform 0.22s ease,
+    box-shadow 0.22s ease;
+}
+
+.product-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
+}
+
+.product-card:active {
+  transform: translateY(-1px) scale(0.98);
+}
+
+.btn-primary {
+  transition:
+    transform 0.16s cubic-bezier(0.34, 1.4, 0.64, 1),
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.btn-primary:hover {
+  transform: scale(1.02);
+}
+
+.btn-primary:active {
+  transform: scale(0.96);
+}
+
+.cart-bar-enter {
+  animation: cart-slide-up 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.fulfillment-card {
+  transition:
+    transform 0.16s cubic-bezier(0.34, 1.4, 0.64, 1),
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.fulfillment-card:active {
+  transform: scale(0.98);
+}
+
+.fulfillment-card-selected {
+  border-color: var(--color-berry);
+  background: white;
+  box-shadow:
+    0 0 0 3px rgba(170, 29, 80, 0.15),
+    0 4px 14px rgba(170, 29, 80, 0.12);
+}
+
+.lang-toggle {
+  transition:
+    transform 0.16s cubic-bezier(0.34, 1.4, 0.64, 1),
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.lang-toggle:active {
+  transform: scale(0.92);
+}
+
+.input-field {
+  width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--color-blush) 60%, transparent);
+  background: color-mix(in srgb, var(--color-cream) 70%, white);
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+  outline: none;
+}
+
+.input-field:focus {
+  border-color: var(--color-berry);
+}
+
+/* --- Drawer & modal --- */
+
+.drawer-backdrop {
+  transition: opacity 0.25s ease;
+}
+
+.drawer-panel {
+  transform: translateX(-100%);
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.drawer-panel-open {
+  transform: translateX(0);
+}
+
+.drawer-backdrop-open {
+  opacity: 1;
+}
+
+.modal-backdrop {
+  animation: modal-fade-in 0.2s ease both;
+}
+
+.modal-panel {
+  animation: modal-scale-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes modal-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modal-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-enter,
+  .chip-btn-active,
+  .cart-bar-enter,
+  .modal-backdrop,
+  .modal-panel {
+    animation: none;
+  }
+
+  .drawer-backdrop,
+  .drawer-panel {
+    transition: none;
+  }
+
+  .drawer-panel-open {
+    transform: translateX(0);
+  }
+
+  .wordmark-link,
+  .wordmark-link:hover,
+  .chip-btn,
+  .chip-btn:active,
+  .product-card,
+  .product-card:hover,
+  .product-card:active,
+  .btn-primary,
+  .btn-primary:hover,
+  .btn-primary:active,
+  .fulfillment-card,
+  .fulfillment-card:active,
+  .lang-toggle,
+  .lang-toggle:active {
+    transform: none;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  }
 }

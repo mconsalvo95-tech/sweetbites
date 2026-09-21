@@ -3,6 +3,8 @@ import { readFileSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 import type { CartLine, Fulfillment, Lang, OrderRecord } from "./types";
 import { getSupabase } from "./supabase";
+import { quotePromoCode } from "./promos";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 const LOCAL_FILE = join(process.cwd(), ".local-orders.json");
 
@@ -23,6 +25,7 @@ export type SubmitOrderInput = {
   fulfillment: Fulfillment;
   lang: Lang;
   customerName: string;
+  customerEmail: string;
   phone: string;
   shipStreet?: string;
   shipCity?: string;
@@ -36,47 +39,81 @@ export type SubmitOrderInput = {
   serviceCode?: string;
   serviceNameEn?: string;
   serviceNameEs?: string;
+  promoCode?: string;
 };
 
 export type SubmitOrderResult = {
   id: string;
   source: "supabase" | "local";
+  foodCents: number;
+  shippingCents: number;
+  discountCents: number;
+  totalCents: number;
+  promoCode: string | null;
 };
 
-export async function submitOrder(input: SubmitOrderInput): Promise<SubmitOrderResult> {
+export async function submitOrder(
+  input: SubmitOrderInput,
+  userId?: string | null,
+): Promise<SubmitOrderResult> {
+  const foodCents = input.items.reduce(
+    (sum, item) => sum + item.unitPriceCents * item.qty,
+    0,
+  );
+  const shippingCents = Math.max(0, input.shippingCents);
+  let discountCents = 0;
+  let promoCode: string | null = null;
+
+  if (input.promoCode?.trim()) {
+    const quote = await quotePromoCode(input.promoCode, foodCents);
+    if (!quote.ok) {
+      throw new Error(
+        quote.error === "min_order" ? "Promo minimum not met" : "Invalid promo code",
+      );
+    }
+    discountCents = quote.discountCents;
+    promoCode = quote.code;
+  }
+
+  const totalCents = foodCents - discountCents + shippingCents;
   const supabase = getSupabase();
+  const id = randomUUID();
 
   if (supabase) {
-    const { data: order, error: orderError } = await supabase
-      .from("orders")
-      .insert({
-        status: "pending",
-        fulfillment: input.fulfillment,
-        lang: input.lang,
-        customer_name: input.customerName,
-        phone: input.phone,
-        ship_street: input.shipStreet ?? null,
-        ship_city: input.shipCity ?? null,
-        ship_province: input.shipProvince ?? null,
-        ship_postal: input.shipPostal ?? null,
-        notes: input.notes ?? null,
-        food_cents: input.foodCents,
-        shipping_cents: input.shippingCents,
-        total_cents: input.totalCents,
-      })
-      .select("id")
-      .single();
+    // ponytail: insert without RETURNING — SELECT RLS hides the new row from the anon client
+    const { error: orderError } = await supabase.from("orders").insert({
+      id,
+      status: "pending",
+      fulfillment: input.fulfillment,
+      lang: input.lang,
+      customer_name: input.customerName,
+      customer_email: input.customerEmail,
+      phone: input.phone,
+      ship_street: input.shipStreet ?? null,
+      ship_city: input.shipCity ?? null,
+      ship_province: input.shipProvince ?? null,
+      ship_postal: input.shipPostal ?? null,
+      notes: input.notes ?? null,
+      food_cents: foodCents,
+      shipping_cents: shippingCents,
+      total_cents: totalCents,
+      discount_cents: discountCents,
+      promo_code: promoCode,
+      user_id: userId ?? null,
+    });
 
-    if (orderError || !order) {
-      throw new Error(orderError?.message ?? "Failed to create order");
+    if (orderError) {
+      throw new Error(orderError.message);
     }
 
     const orderItems = input.items.map((item) => ({
-      order_id: order.id,
+      order_id: id,
       product_id: item.productId,
       qty: item.qty,
       unit_price_cents: item.unitPriceCents,
       options_json: item.optionsJson,
+      name_en: item.nameEn,
+      name_es: item.nameEs,
     }));
 
     const { error: itemsError } = await supabase.from("order_items").insert(orderItems);
@@ -84,10 +121,10 @@ export async function submitOrder(input: SubmitOrderInput): Promise<SubmitOrderR
 
     if (input.fulfillment === "ship" && input.serviceCode) {
       const { error: shipError } = await supabase.from("shipments").insert({
-        order_id: order.id,
+        order_id: id,
         carrier: "canada_post",
         service_code: input.serviceCode,
-        rate_cents: input.shippingCents,
+        rate_cents: shippingCents,
         tracking_pin: null,
         label_url: null,
         raw_json: {
@@ -100,26 +137,36 @@ export async function submitOrder(input: SubmitOrderInput): Promise<SubmitOrderR
       if (shipError) throw new Error(shipError.message);
     }
 
-    return { id: order.id, source: "supabase" };
+    return {
+      id,
+      source: "supabase",
+      foodCents,
+      shippingCents,
+      discountCents,
+      totalCents,
+      promoCode,
+    };
   }
 
   // ponytail: file-backed orders when Supabase env is unset; upgrade path = set env vars
-  const id = randomUUID();
   const record: OrderRecord = {
     id,
     status: "pending",
     fulfillment: input.fulfillment,
     lang: input.lang,
     customerName: input.customerName,
+    customerEmail: input.customerEmail,
     phone: input.phone,
     shipStreet: input.shipStreet,
     shipCity: input.shipCity,
     shipProvince: input.shipProvince,
     shipPostal: input.shipPostal,
     notes: input.notes,
-    foodCents: input.foodCents,
-    shippingCents: input.shippingCents,
-    totalCents: input.totalCents,
+    foodCents,
+    shippingCents,
+    totalCents,
+    discountCents,
+    promoCode: promoCode ?? undefined,
     items: input.items,
     serviceCode: input.serviceCode,
     serviceNameEn: input.serviceNameEn,
@@ -130,11 +177,22 @@ export async function submitOrder(input: SubmitOrderInput): Promise<SubmitOrderR
   orders.push(record);
   writeLocalOrders(orders);
 
-  return { id, source: "local" };
+  return {
+    id,
+    source: "local",
+    foodCents,
+    shippingCents,
+    discountCents,
+    totalCents,
+    promoCode,
+  };
 }
 
-export async function getOrder(id: string): Promise<OrderRecord | null> {
-  const supabase = getSupabase();
+export async function getOrder(
+  id: string,
+  client?: SupabaseClient | null,
+): Promise<OrderRecord | null> {
+  const supabase = client ?? getSupabase();
 
   if (supabase) {
     const { data: order, error } = await supabase
@@ -164,6 +222,7 @@ export async function getOrder(id: string): Promise<OrderRecord | null> {
       fulfillment: order.fulfillment,
       lang: order.lang,
       customerName: order.customer_name,
+      customerEmail: order.customer_email ?? "",
       phone: order.phone,
       shipStreet: order.ship_street ?? undefined,
       shipCity: order.ship_city ?? undefined,
@@ -173,6 +232,8 @@ export async function getOrder(id: string): Promise<OrderRecord | null> {
       foodCents: order.food_cents,
       shippingCents: order.shipping_cents,
       totalCents: order.total_cents,
+      discountCents: order.discount_cents ?? 0,
+      promoCode: order.promo_code ?? undefined,
       items: (items ?? []).map((item) => ({
         lineId: item.id,
         productId: item.product_id,

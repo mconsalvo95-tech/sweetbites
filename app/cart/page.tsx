@@ -4,23 +4,29 @@ import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCart } from "@/lib/cart";
+import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/lang";
 import {
+  EMAIL_RE,
   formatCad,
   isValidCanadianPostal,
   normalizePostal,
   pickName,
   t,
 } from "@/lib/format";
+import { LOCAL_DELIVERY_CENTS } from "@/lib/shop";
 import { getMockShippingRates } from "@/lib/shipping";
-import type { ShippingService } from "@/lib/types";
+import type { Fulfillment, ShippingService } from "@/lib/types";
 
 const PROVINCES = [
   "AB", "BC", "MB", "NB", "NL", "NS", "NT", "NU", "ON", "PE", "QC", "SK", "YT",
 ];
 
+const FULFILLMENT_OPTIONS: Fulfillment[] = ["pickup", "delivery", "ship"];
+
 export default function CartPage() {
   const { lang } = useLang();
+  const { user, profile } = useAuth();
   const router = useRouter();
   const {
     lines,
@@ -33,6 +39,7 @@ export default function CartPage() {
   } = useCart();
 
   const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [street, setStreet] = useState("");
   const [city, setCity] = useState("");
@@ -44,13 +51,26 @@ export default function CartPage() {
   const [postalError, setPostalError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [promoInput, setPromoInput] = useState("");
+  const [promoError, setPromoError] = useState("");
+  const [promoBusy, setPromoBusy] = useState(false);
+  const [applied, setApplied] = useState<{ code: string; discountCents: number } | null>(null);
 
   const shippingCents = useMemo(() => {
     if (fulfillment === "pickup") return 0;
+    if (fulfillment === "delivery") return LOCAL_DELIVERY_CENTS;
     return rates.find((r) => r.code === serviceCode)?.rateCents ?? 0;
   }, [fulfillment, rates, serviceCode]);
 
-  const totalCents = foodTotalCents + shippingCents;
+  const discountCents = applied?.discountCents ?? 0;
+  const totalCents = foodTotalCents - discountCents + shippingCents;
+
+  useEffect(() => {
+    if (!user) return;
+    setEmail((value) => value || user.email || "");
+    setName((value) => value || profile?.display_name || "");
+    setPhone((value) => value || profile?.phone || "");
+  }, [user, profile]);
 
   useEffect(() => {
     if (fulfillment !== "ship") return;
@@ -61,16 +81,95 @@ export default function CartPage() {
     setRates(getMockShippingRates(postal));
   }, [fulfillment, postal]);
 
+  useEffect(() => {
+    if (!applied) return;
+    const code = applied.code;
+    let cancelled = false;
+    fetch("/api/promos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, foodCents: foodTotalCents }),
+    })
+      .then(async (res) => {
+        const data = await res.json();
+        if (cancelled) return;
+        if (!res.ok || !data.ok) {
+          setApplied(null);
+          return;
+        }
+        setApplied({ code: data.code, discountCents: data.discountCents });
+      })
+      .catch(() => {
+        if (!cancelled) setApplied(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [foodTotalCents, applied?.code]);
+
   const selectedService = rates.find((r) => r.code === serviceCode);
+
+  const promoMessage = (err: string, minFoodCents?: number) => {
+    if (err === "min_order") {
+      return t(
+        `Minimum food total is ${formatCad(minFoodCents ?? 0)}`,
+        `El mínimo de comida es ${formatCad(minFoodCents ?? 0)}`,
+        lang,
+      );
+    }
+    return t("That code isn’t valid", "Ese código no es válido", lang);
+  };
+
+  const handleApplyPromo = async () => {
+    setPromoError("");
+    if (!promoInput.trim()) {
+      setApplied(null);
+      return;
+    }
+    setPromoBusy(true);
+    try {
+      const res = await fetch("/api/promos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: promoInput, foodCents: foodTotalCents }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setApplied(null);
+        setPromoError(promoMessage(data.error, data.minFoodCents));
+        return;
+      }
+      setPromoInput(data.code);
+      setApplied({ code: data.code, discountCents: data.discountCents });
+    } catch {
+      setApplied(null);
+      setPromoError(t("Couldn’t check that code", "No se pudo verificar el código", lang));
+    } finally {
+      setPromoBusy(false);
+    }
+  };
+
+  const fulfillmentLabel = (f: Fulfillment) => {
+    if (f === "pickup") return t("Pickup", "Recoger", lang);
+    if (f === "delivery") return t("Delivery", "Entrega", lang);
+    return t("Ship", "Enviar", lang);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setPostalError("");
 
-    if (!name.trim() || !phone.trim()) {
-      setError(t("Name and phone are required", "Nombre y teléfono son obligatorios", lang));
+    if (!name.trim() || !phone.trim() || !email.trim() || !EMAIL_RE.test(email.trim())) {
+      setError(t("Name, email, and phone are required", "Nombre, correo y teléfono son obligatorios", lang));
       return;
+    }
+
+    if (fulfillment === "delivery") {
+      if (!street.trim() || !city.trim()) {
+        setError(t("Complete your delivery address", "Completa tu dirección de entrega", lang));
+        return;
+      }
     }
 
     if (fulfillment === "ship") {
@@ -90,6 +189,7 @@ export default function CartPage() {
 
     setSubmitting(true);
     try {
+      const needsAddress = fulfillment === "ship" || fulfillment === "delivery";
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -97,9 +197,10 @@ export default function CartPage() {
           fulfillment,
           lang,
           customerName: name.trim(),
+          customerEmail: email.trim().toLowerCase(),
           phone: phone.trim(),
-          shipStreet: fulfillment === "ship" ? street.trim() : undefined,
-          shipCity: fulfillment === "ship" ? city.trim() : undefined,
+          shipStreet: needsAddress ? street.trim() : undefined,
+          shipCity: needsAddress ? city.trim() : undefined,
           shipProvince: fulfillment === "ship" ? province : undefined,
           shipPostal: fulfillment === "ship" ? normalizePostal(postal) : undefined,
           notes: notes.trim() || undefined,
@@ -110,6 +211,7 @@ export default function CartPage() {
           serviceCode: fulfillment === "ship" ? serviceCode : undefined,
           serviceNameEn: selectedService?.nameEn,
           serviceNameEs: selectedService?.nameEs,
+          promoCode: (applied?.code || promoInput).trim() || undefined,
         }),
       });
 
@@ -121,10 +223,13 @@ export default function CartPage() {
           fulfillment,
           lang,
           customerName: name.trim(),
+          customerEmail: email.trim().toLowerCase(),
           phone: phone.trim(),
           foodCents: foodTotalCents,
           shippingCents,
           totalCents,
+          discountCents,
+          promoCode: applied?.code,
           items: lines,
           serviceCode: fulfillment === "ship" ? serviceCode : undefined,
           serviceNameEn: selectedService?.nameEn,
@@ -143,12 +248,12 @@ export default function CartPage() {
 
   if (lines.length === 0) {
     return (
-      <div className="py-12 text-center">
-        <p className="text-[#2B1E14]/70">{t("Your cart is empty", "Tu carrito está vacío", lang)}</p>
+      <div className="relative z-10 py-12 text-center">
+        <p className="text-coal/70">{t("Your cart is empty", "Tu carrito está vacío", lang)}</p>
         <button
           type="button"
           onClick={() => router.push("/order")}
-          className="mt-4 text-[#C45C26] underline"
+          className="mt-4 text-berry underline"
         >
           {t("Browse menu", "Ver menú", lang)}
         </button>
@@ -157,19 +262,19 @@ export default function CartPage() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="relative z-10 space-y-6">
       <h1 className="font-display text-2xl font-semibold">{t("Cart", "Carrito", lang)}</h1>
 
       <div className="space-y-3">
         {lines.map((line) => (
           <div key={line.lineId} className="flex gap-3 rounded-[18px] bg-white p-3 shadow-sm">
             <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl">
-              <Image src={line.imageUrl} alt="" fill className="object-cover" sizes="64px" />
+              <Image src={line.imageUrl} alt="" fill unoptimized={line.imageUrl.startsWith("http")} className="object-cover" sizes="64px" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="font-display font-semibold">{pickName(line, lang)}</p>
               {Object.entries(line.optionsJson).map(([key, vals]) => (
-                <p key={key} className="text-xs text-[#2B1E14]/60">
+                <p key={key} className="text-xs text-coal/60">
                   {key}: {vals.join(", ")}
                 </p>
               ))}
@@ -178,7 +283,7 @@ export default function CartPage() {
                   <button
                     type="button"
                     onClick={() => updateQty(line.lineId, line.qty - 1)}
-                    className="h-7 w-7 rounded-full bg-[#F6F0E6]"
+                    className="h-7 w-7 rounded-full bg-cream"
                   >
                     −
                   </button>
@@ -186,19 +291,19 @@ export default function CartPage() {
                   <button
                     type="button"
                     onClick={() => updateQty(line.lineId, line.qty + 1)}
-                    className="h-7 w-7 rounded-full bg-[#F6F0E6]"
+                    className="h-7 w-7 rounded-full bg-cream"
                   >
                     +
                   </button>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm font-semibold text-[#C45C26]">
+                  <p className="text-sm font-semibold text-berry">
                     {formatCad(line.unitPriceCents * line.qty)}
                   </p>
                   <button
                     type="button"
                     onClick={() => removeLine(line.lineId)}
-                    className="text-xs text-[#2B1E14]/50 underline"
+                    className="text-xs text-coal/50 underline"
                   >
                     {t("Remove", "Quitar", lang)}
                   </button>
@@ -211,21 +316,19 @@ export default function CartPage() {
 
       <div className="rounded-[18px] bg-white p-4 shadow-sm">
         <h2 className="font-medium">{t("Fulfillment", "Entrega", lang)}</h2>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          {(["pickup", "ship"] as const).map((f) => (
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          {FULFILLMENT_OPTIONS.map((f) => (
             <button
               key={f}
               type="button"
               onClick={() => setFulfillment(f)}
-              className={`rounded-xl py-2.5 text-sm font-medium ${
+              className={`rounded-xl py-2.5 text-xs font-medium sm:text-sm ${
                 fulfillment === f
-                  ? "bg-[#C45C26] text-white"
-                  : "bg-[#F6F0E6] text-[#2B1E14]"
+                  ? "bg-berry text-white"
+                  : "bg-blush/30 text-coal"
               }`}
             >
-              {f === "pickup"
-                ? t("Pickup", "Recoger", lang)
-                : t("Ship", "Enviar", lang)}
+              {fulfillmentLabel(f)}
             </button>
           ))}
         </div>
@@ -238,7 +341,16 @@ export default function CartPage() {
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t("Full name", "Nombre completo", lang)}
-          className="w-full rounded-xl border border-[#e8dfd3] bg-[#F6F0E6]/50 px-3 py-2.5 text-sm outline-none focus:border-[#C45C26]"
+          className="input-field"
+        />
+        <input
+          required
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder={t("Email", "Correo", lang)}
+          autoComplete="email"
+          className="input-field"
         />
         <input
           required
@@ -246,16 +358,39 @@ export default function CartPage() {
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
           placeholder={t("Phone", "Teléfono", lang)}
-          className="w-full rounded-xl border border-[#e8dfd3] bg-[#F6F0E6]/50 px-3 py-2.5 text-sm outline-none focus:border-[#C45C26]"
+          className="input-field"
         />
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           placeholder={t("Order notes (optional)", "Notas del pedido (opcional)", lang)}
           rows={2}
-          className="w-full rounded-xl border border-[#e8dfd3] bg-[#F6F0E6]/50 px-3 py-2.5 text-sm outline-none focus:border-[#C45C26]"
+          className="input-field"
         />
       </div>
+
+      {fulfillment === "delivery" && (
+        <div className="space-y-3 rounded-[18px] bg-white p-4 shadow-sm">
+          <h2 className="font-medium">{t("Deliver to (Toronto area)", "Entregar en (área Toronto)", lang)}</h2>
+          <input
+            required
+            value={street}
+            onChange={(e) => setStreet(e.target.value)}
+            placeholder={t("Street address", "Dirección", lang)}
+            className="input-field"
+          />
+          <input
+            required
+            value={city}
+            onChange={(e) => setCity(e.target.value)}
+            placeholder={t("City", "Ciudad", lang)}
+            className="input-field"
+          />
+          <p className="text-xs text-coal/60">
+            {t("Flat delivery fee", "Tarifa fija de entrega", lang)}: {formatCad(LOCAL_DELIVERY_CENTS)}
+          </p>
+        </div>
+      )}
 
       {fulfillment === "ship" && (
         <>
@@ -265,19 +400,19 @@ export default function CartPage() {
               value={street}
               onChange={(e) => setStreet(e.target.value)}
               placeholder={t("Street address", "Dirección", lang)}
-              className="w-full rounded-xl border border-[#e8dfd3] bg-[#F6F0E6]/50 px-3 py-2.5 text-sm outline-none focus:border-[#C45C26]"
+              className="input-field"
             />
             <input
               value={city}
               onChange={(e) => setCity(e.target.value)}
               placeholder={t("City", "Ciudad", lang)}
-              className="w-full rounded-xl border border-[#e8dfd3] bg-[#F6F0E6]/50 px-3 py-2.5 text-sm outline-none focus:border-[#C45C26]"
+              className="input-field"
             />
             <div className="grid grid-cols-2 gap-2">
               <select
                 value={province}
                 onChange={(e) => setProvince(e.target.value)}
-                className="rounded-xl border border-[#e8dfd3] bg-[#F6F0E6]/50 px-3 py-2.5 text-sm outline-none focus:border-[#C45C26]"
+                className="input-field"
               >
                 {PROVINCES.map((p) => (
                   <option key={p} value={p}>{p}</option>
@@ -290,7 +425,7 @@ export default function CartPage() {
                   setPostalError("");
                 }}
                 placeholder="A1A 1A1"
-                className="rounded-xl border border-[#e8dfd3] bg-[#F6F0E6]/50 px-3 py-2.5 text-sm uppercase outline-none focus:border-[#C45C26]"
+                className="input-field uppercase"
               />
             </div>
             {postalError && <p className="text-sm text-red-600">{postalError}</p>}
@@ -306,8 +441,8 @@ export default function CartPage() {
                   key={rate.code}
                   className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${
                     serviceCode === rate.code
-                      ? "border-[#C45C26] bg-[#C45C26]/5"
-                      : "border-[#e8dfd3]"
+                      ? "border-berry bg-berry/5"
+                      : "border-blush/40"
                   }`}
                 >
                   <input
@@ -315,17 +450,17 @@ export default function CartPage() {
                     name="shipping"
                     checked={serviceCode === rate.code}
                     onChange={() => setServiceCode(rate.code)}
-                    className="mt-1 accent-[#C45C26]"
+                    className="mt-1 accent-berry"
                   />
                   <div className="flex-1">
                     <p className="font-medium">
                       {lang === "es" ? rate.nameEs : rate.nameEn}
                     </p>
-                    <p className="text-xs text-[#2B1E14]/60">
+                    <p className="text-xs text-coal/60">
                       {lang === "es" ? rate.etaEs : rate.etaEn}
                     </p>
                   </div>
-                  <span className="font-semibold text-[#C45C26]">
+                  <span className="font-semibold text-berry">
                     {formatCad(rate.rateCents)}
                   </span>
                 </label>
@@ -335,20 +470,62 @@ export default function CartPage() {
         </>
       )}
 
-      <div className="rounded-[18px] bg-white p-4 shadow-sm space-y-2 text-sm">
-        <div className="flex justify-between">
+      <div className="space-y-2 rounded-[18px] bg-white p-4 shadow-sm text-sm">
+        <div className="flex gap-2">
+          <input
+            value={promoInput}
+            onChange={(e) => {
+              setPromoInput(e.target.value.toUpperCase());
+              setPromoError("");
+            }}
+            placeholder={t("Promo code", "Código de promo", lang)}
+            className="input-field flex-1 uppercase"
+            autoComplete="off"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void handleApplyPromo();
+              }
+            }}
+          />
+          <button
+            type="button"
+            onClick={handleApplyPromo}
+            disabled={promoBusy}
+            className="shrink-0 rounded-xl bg-blush/40 px-4 text-sm font-medium text-coal disabled:opacity-60 hover:bg-blush/60"
+          >
+            {promoBusy ? t("Checking…", "Revisando…", lang) : t("Apply", "Aplicar", lang)}
+          </button>
+        </div>
+        {promoError && <p className="text-sm text-red-600">{promoError}</p>}
+        {applied && !promoError && (
+          <p className="text-sm text-berry">
+            {t(`Code ${applied.code} applied`, `Código ${applied.code} aplicado`, lang)}
+          </p>
+        )}
+        <div className="flex justify-between pt-2">
           <span>{t("Food", "Comida", lang)}</span>
           <span>{formatCad(foodTotalCents)}</span>
         </div>
-        {fulfillment === "ship" && (
+        {discountCents > 0 && (
+          <div className="flex justify-between text-berry">
+            <span>{t("Promo", "Promo", lang)}</span>
+            <span>−{formatCad(discountCents)}</span>
+          </div>
+        )}
+        {(fulfillment === "ship" || fulfillment === "delivery") && (
           <div className="flex justify-between">
-            <span>{t("Shipping", "Envío", lang)}</span>
+            <span>
+              {fulfillment === "delivery"
+                ? t("Delivery", "Entrega", lang)
+                : t("Shipping", "Envío", lang)}
+            </span>
             <span>{formatCad(shippingCents)}</span>
           </div>
         )}
-        <div className="flex justify-between border-t border-[#e8dfd3] pt-2 text-base font-semibold">
+        <div className="flex justify-between border-t border-blush/40 pt-2 text-base font-semibold">
           <span>{t("Total", "Total", lang)}</span>
-          <span className="text-[#C45C26]">{formatCad(totalCents)}</span>
+          <span className="text-berry">{formatCad(totalCents)}</span>
         </div>
       </div>
 
@@ -357,7 +534,7 @@ export default function CartPage() {
       <button
         type="submit"
         disabled={submitting}
-        className="w-full rounded-full bg-[#C45C26] py-3.5 font-semibold text-white shadow-md disabled:opacity-60"
+        className="btn-primary w-full rounded-full bg-berry py-3.5 font-semibold text-white shadow-md disabled:opacity-60 hover:bg-berry-hover"
       >
         {submitting
           ? t("Placing order…", "Enviando pedido…", lang)
