@@ -4,14 +4,17 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/lib/auth";
+import { useCart } from "@/lib/cart";
 import { useLang } from "@/lib/lang";
 import { formatCad, pickName, t } from "@/lib/format";
 import { canCustomerCancel, type CartLine, type Fulfillment, type Lang } from "@/lib/types";
 import { getSupabaseBrowser } from "@/lib/supabase-browser";
+import { LocationContent } from "@/app/location/LocationContent";
 
 type OrderView = {
   id: string;
   status?: string;
+  paymentStatus?: "paid" | "unpaid";
   fulfillment: Fulfillment;
   lang: Lang;
   customerName: string;
@@ -31,6 +34,7 @@ export default function OrderStatusPage() {
   const id = params.id;
   const { lang } = useLang();
   const { user } = useAuth();
+  const { clearCart } = useCart();
   const [order, setOrder] = useState<OrderView | null>(null);
   const [loading, setLoading] = useState(true);
   const [cancelBusy, setCancelBusy] = useState(false);
@@ -58,6 +62,19 @@ export default function OrderStatusPage() {
     }
     load().finally(() => setLoading(false));
   }, [id]);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("paid") !== "1") return;
+    clearCart();
+    if (!id) return;
+    const key = `sweetbites-order-${id}`;
+    const cached = localStorage.getItem(key);
+    if (cached) {
+      const parsed = JSON.parse(cached) as OrderView;
+      localStorage.setItem(key, JSON.stringify({ ...parsed, paymentStatus: "paid" }));
+      setOrder((prev) => (prev ? { ...prev, paymentStatus: "paid" } : prev));
+    }
+  }, [clearCart, id]);
 
   const cancelOrder = async () => {
     if (!id || !user) return;
@@ -97,28 +114,39 @@ export default function OrderStatusPage() {
     lang === "es" ? order.serviceNameEs : order.serviceNameEn;
   const status = order.status || "pending";
   const cancelled = status === "cancelled";
+  const unpaid = order.paymentStatus === "unpaid" && !cancelled;
 
   return (
     <div className="relative z-10 space-y-6 text-center">
       <div
         className={`inline-block rounded-full px-4 py-2 text-sm font-medium ${
-          cancelled ? "bg-coal/10 text-coal/70" : "bg-berry/10 text-berry"
+          cancelled || unpaid ? "bg-coal/10 text-coal/70" : "bg-berry/10 text-berry"
         }`}
       >
         {cancelled
           ? t("Order cancelled", "Pedido cancelado", lang)
+          : unpaid
+            ? t("Awaiting payment", "Esperando el pago", lang)
           : `✓ ${t("Order received", "Pedido recibido", lang)}`}
       </div>
 
       <h1 className="font-display text-2xl font-semibold">
         {cancelled
           ? t("This order was cancelled", "Este pedido fue cancelado", lang)
+          : unpaid
+            ? t("Finish paying on Square", "Termina de pagar en Square", lang)
           : t("We got your order", "Recibimos tu pedido", lang)}{" "}
         #{order.id.slice(0, 8)}
       </h1>
 
       <p className="text-coal/75">
-        {t(
+        {unpaid
+          ? t(
+              "Your order is saved. Complete payment on the Square page to confirm it.",
+              "Tu pedido está guardado. Completa el pago en Square para confirmarlo.",
+              lang,
+            )
+          : t(
           `Thanks ${order.customerName}! We emailed a confirmation to you.`,
           `¡Gracias ${order.customerName}! Te enviamos la confirmación por correo.`,
           lang,
@@ -152,14 +180,14 @@ export default function OrderStatusPage() {
           {order.fulfillment === "ship" && (
             <>
               <div className="flex justify-between">
-                <span>{t("Shipping (mock)", "Envío (simulado)", lang)}</span>
+                <span>{t("Shipping", "Envío", lang)}</span>
                 <span>{formatCad(order.shippingCents)}</span>
               </div>
               {serviceName && (
                 <p className="text-xs text-coal/60">
                   {t(
-                    `Quoted as ${serviceName} — ${formatCad(order.shippingCents)} (mock).`,
-                    `Cotizado como ${serviceName} — ${formatCad(order.shippingCents)} (simulado).`,
+                    `Quoted as ${serviceName} — ${formatCad(order.shippingCents)}.`,
+                    `Cotizado como ${serviceName} — ${formatCad(order.shippingCents)}.`,
                     lang,
                   )}
                 </p>
@@ -179,11 +207,17 @@ export default function OrderStatusPage() {
         </div>
       </div>
 
-      {order.fulfillment === "pickup" && (
+      {!cancelled && !unpaid && (
+        <div className="text-left">
+          <LocationContent />
+        </div>
+      )}
+
+      {order.fulfillment === "pickup" && !cancelled && !unpaid && (
         <p className="text-sm text-coal/70">
           {t(
-            "Pickup at 124 King Street W, Toronto. We'll text when it's ready.",
-            "Recoge en 124 King Street W, Toronto. Te avisaremos por mensaje cuando esté listo.",
+            "We'll text when your order is ready for pickup.",
+            "Te avisaremos por mensaje cuando tu pedido esté listo para recoger.",
             lang,
           )}
         </p>
@@ -192,8 +226,8 @@ export default function OrderStatusPage() {
       {order.fulfillment === "delivery" && (
         <p className="text-sm text-coal/70">
           {t(
-            "We'll deliver to your address within the Toronto area. Watch for our text!",
-            "Entregaremos en tu dirección en el área de Toronto. ¡Espera nuestro mensaje!",
+            "We'll deliver to your address within the Red Deer area. Watch for our text!",
+            "Entregaremos en tu dirección en el área de Red Deer. ¡Espera nuestro mensaje!",
             lang,
           )}
         </p>

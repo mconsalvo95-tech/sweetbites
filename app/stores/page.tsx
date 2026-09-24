@@ -2,28 +2,11 @@
 
 import { useLang } from "@/lib/lang";
 import { t } from "@/lib/format";
-
-const STORES = [
-  {
-    nameEn: "Morning Brew Café",
-    nameEs: "Morning Brew Café",
-    addrEn: "88 Queen St E, Toronto",
-    addrEs: "88 Queen St E, Toronto",
-    noteEn: "Cookie boxes + brownie bites",
-    noteEs: "Cajas de galletas + brownie bites",
-  },
-  {
-    nameEn: "The Pantry General",
-    nameEs: "The Pantry General",
-    addrEn: "412 Roncesvalles Ave, Toronto",
-    addrEs: "412 Roncesvalles Ave, Toronto",
-    noteEn: "Weekend pastry selection",
-    noteEs: "Selección de pastelería de fin de semana",
-  },
-];
+import { useSitePageBody, type StoresBody } from "@/lib/site-pages";
 
 export default function StoresPage() {
   const { lang } = useLang();
+  const body = useSitePageBody("stores") as StoresBody;
 
   return (
     <div className="relative z-10 space-y-6">
@@ -32,11 +15,11 @@ export default function StoresPage() {
           {t("Find us in stores", "Encuéntranos en tiendas", lang)}
         </h1>
         <p className="mt-2 text-sm text-coal/75">
-          {t("Grab Sweetbites at these local retailers.", "Consigue Sweetbites en estos comercios.", lang)}
+          {lang === "es" ? body.intro_es : body.intro_en}
         </p>
       </div>
       <div className="space-y-3">
-        {STORES.map((store) => (
+        {body.items.map((store) => (
           <div key={store.nameEn} className="rounded-[18px] bg-white p-4 shadow-sm">
             <p className="font-display text-lg text-berry">
               {lang === "es" ? store.nameEs : store.nameEn}

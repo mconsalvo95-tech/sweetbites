@@ -1,0 +1,7 @@
+.cursor
+header-verify.png
+/logos
+/test-images
+agent-transcripts
+*.md
+!README.md

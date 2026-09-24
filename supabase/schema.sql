@@ -368,9 +368,20 @@ drop policy if exists "Admins update orders" on orders;
 create policy "Admins update orders" on orders
   for update using (public.is_admin()) with check (public.is_admin());
 
+drop policy if exists "Admins delete orders" on orders;
+create policy "Admins delete orders" on orders
+  for delete using (public.is_admin());
+drop policy if exists "Admins delete order items" on order_items;
+create policy "Admins delete order items" on order_items
+  for delete using (public.is_admin());
+drop policy if exists "Admins delete shipments" on shipments;
+create policy "Admins delete shipments" on shipments
+  for delete using (public.is_admin());
+
 alter table orders drop constraint if exists orders_status_check;
+update orders set status = 'pending' where status = 'ready';
 alter table orders add constraint orders_status_check
-  check (status in ('pending', 'ready', 'completed', 'sent', 'cancelled'));
+  check (status in ('pending', 'completed', 'sent', 'cancelled'));
 
 create or replace function public.cancel_own_order(order_id uuid)
 returns void
@@ -383,7 +394,7 @@ begin
   set status = 'cancelled'
   where id = order_id
     and user_id = auth.uid()
-    and status in ('pending', 'ready');
+    and status = 'pending';
   if not found then
     raise exception 'Cannot cancel this order';
   end if;
@@ -404,6 +415,13 @@ alter table order_items drop constraint if exists order_items_product_id_fkey;
 alter table order_items add constraint order_items_product_id_fkey
   foreign key (product_id) references products(id) on delete set null;
 
+alter table orders add column if not exists payment_status text not null default 'paid';
+alter table orders drop constraint if exists orders_payment_status_check;
+alter table orders add constraint orders_payment_status_check
+  check (payment_status in ('paid', 'unpaid'));
+alter table orders add column if not exists square_payment_id text;
+alter table orders add column if not exists square_order_id text;
+
 drop policy if exists "Read order items" on order_items;
 create policy "Read order items" on order_items
   for select using (
@@ -417,3 +435,53 @@ create policy "Read shipments" on shipments
     public.is_admin()
     or exists (select 1 from orders o where o.id = order_id and o.user_id = auth.uid())
   );
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'offer-images',
+  'offer-images',
+  true,
+  8388608,
+  array['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "Public read offer images" on storage.objects;
+create policy "Public read offer images" on storage.objects
+  for select using (bucket_id = 'offer-images');
+
+drop policy if exists "Admins upload offer images" on storage.objects;
+create policy "Admins upload offer images" on storage.objects
+  for insert with check (bucket_id = 'offer-images' and public.is_admin());
+
+drop policy if exists "Admins update offer images" on storage.objects;
+create policy "Admins update offer images" on storage.objects
+  for update using (bucket_id = 'offer-images' and public.is_admin())
+  with check (bucket_id = 'offer-images' and public.is_admin());
+
+drop policy if exists "Admins delete offer images" on storage.objects;
+create policy "Admins delete offer images" on storage.objects
+  for delete using (bucket_id = 'offer-images' and public.is_admin());
+
+create table if not exists site_pages (
+  slug text primary key,
+  body jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+alter table site_pages enable row level security;
+
+drop policy if exists "Public read site pages" on site_pages;
+create policy "Public read site pages" on site_pages
+  for select using (true);
+
+drop policy if exists "Admins insert site pages" on site_pages;
+create policy "Admins insert site pages" on site_pages
+  for insert with check (public.is_admin());
+
+drop policy if exists "Admins update site pages" on site_pages;
+create policy "Admins update site pages" on site_pages
+  for update using (public.is_admin()) with check (public.is_admin());

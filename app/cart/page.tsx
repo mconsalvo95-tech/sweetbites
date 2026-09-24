@@ -15,7 +15,6 @@ import {
   t,
 } from "@/lib/format";
 import { LOCAL_DELIVERY_CENTS } from "@/lib/shop";
-import { getMockShippingRates } from "@/lib/shipping";
 import type { Fulfillment, ShippingService } from "@/lib/types";
 
 const PROVINCES = [
@@ -43,11 +42,13 @@ export default function CartPage() {
   const [phone, setPhone] = useState("");
   const [street, setStreet] = useState("");
   const [city, setCity] = useState("");
-  const [province, setProvince] = useState("ON");
+  const [province, setProvince] = useState("AB");
   const [postal, setPostal] = useState("");
   const [notes, setNotes] = useState("");
-  const [serviceCode, setServiceCode] = useState("regular");
+  const [serviceCode, setServiceCode] = useState("");
   const [rates, setRates] = useState<ShippingService[]>([]);
+  const [ratesSource, setRatesSource] = useState<"cpc" | "mock" | "">("");
+  const [ratesError, setRatesError] = useState("");
   const [postalError, setPostalError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -55,6 +56,7 @@ export default function CartPage() {
   const [promoError, setPromoError] = useState("");
   const [promoBusy, setPromoBusy] = useState(false);
   const [applied, setApplied] = useState<{ code: string; discountCents: number } | null>(null);
+  const [canceled, setCanceled] = useState(false);
 
   const shippingCents = useMemo(() => {
     if (fulfillment === "pickup") return 0;
@@ -66,6 +68,10 @@ export default function CartPage() {
   const totalCents = foodTotalCents - discountCents + shippingCents;
 
   useEffect(() => {
+    setCanceled(new URLSearchParams(window.location.search).get("canceled") === "1");
+  }, []);
+
+  useEffect(() => {
     if (!user) return;
     setEmail((value) => value || user.email || "");
     setName((value) => value || profile?.display_name || "");
@@ -73,13 +79,55 @@ export default function CartPage() {
   }, [user, profile]);
 
   useEffect(() => {
-    if (fulfillment !== "ship") return;
-    if (!isValidCanadianPostal(postal)) {
+    if (fulfillment !== "ship") {
       setRates([]);
+      setRatesSource("");
+      setRatesError("");
       return;
     }
-    setRates(getMockShippingRates(postal));
-  }, [fulfillment, postal]);
+    if (!isValidCanadianPostal(postal) || lines.length === 0) {
+      setRates([]);
+      setRatesSource("");
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      fetch("/api/shipping/rates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          postal,
+          items: lines.map((line) => ({ productId: line.productId, qty: line.qty })),
+        }),
+      })
+        .then(async (res) => {
+          const data = await res.json();
+          if (cancelled) return;
+          if (!res.ok || !data.rates?.length) {
+            setRates([]);
+            setRatesSource("");
+            setRatesError(t("No shipping options for that postal code", "No hay envío para ese código postal", lang));
+            return;
+          }
+          setRatesError("");
+          setRates(data.rates);
+          setRatesSource(data.source === "cpc" ? "cpc" : "mock");
+          setServiceCode((code) =>
+            data.rates.some((r: ShippingService) => r.code === code) ? code : data.rates[0].code,
+          );
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setRates([]);
+            setRatesError(t("Could not load shipping rates", "No se pudieron cargar las tarifas", lang));
+          }
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [fulfillment, postal, lines, lang]);
 
   useEffect(() => {
     if (!applied) return;
@@ -218,6 +266,20 @@ export default function CartPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed");
 
+      if (
+        process.env.NEXT_PUBLIC_SQUARE_PAY &&
+        totalCents > 0 &&
+        !data.checkoutUrl
+      ) {
+        throw new Error(
+          t(
+            "Card checkout is unavailable. Try again or contact the shop.",
+            "El pago con tarjeta no está disponible. Intenta de nuevo o contacta la tienda.",
+            lang,
+          ),
+        );
+      }
+
       if (typeof window !== "undefined") {
         localStorage.setItem(`sweetbites-order-${data.id}`, JSON.stringify({
           fulfillment,
@@ -234,7 +296,13 @@ export default function CartPage() {
           serviceCode: fulfillment === "ship" ? serviceCode : undefined,
           serviceNameEn: selectedService?.nameEn,
           serviceNameEs: selectedService?.nameEs,
+          paymentStatus: data.checkoutUrl ? "unpaid" : "paid",
         }));
+      }
+
+      if (data.checkoutUrl) {
+        window.location.href = data.checkoutUrl as string;
+        return;
       }
 
       clearCart();
@@ -283,7 +351,7 @@ export default function CartPage() {
                   <button
                     type="button"
                     onClick={() => updateQty(line.lineId, line.qty - 1)}
-                    className="h-7 w-7 rounded-full bg-cream"
+                    className="h-7 w-7 rounded-full bg-blush/35"
                   >
                     −
                   </button>
@@ -291,7 +359,7 @@ export default function CartPage() {
                   <button
                     type="button"
                     onClick={() => updateQty(line.lineId, line.qty + 1)}
-                    className="h-7 w-7 rounded-full bg-cream"
+                    className="h-7 w-7 rounded-full bg-blush/35"
                   >
                     +
                   </button>
@@ -371,7 +439,7 @@ export default function CartPage() {
 
       {fulfillment === "delivery" && (
         <div className="space-y-3 rounded-[18px] bg-white p-4 shadow-sm">
-          <h2 className="font-medium">{t("Deliver to (Toronto area)", "Entregar en (área Toronto)", lang)}</h2>
+          <h2 className="font-medium">{t("Deliver to (Red Deer area)", "Entregar en (área Red Deer)", lang)}</h2>
           <input
             required
             value={street}
@@ -431,10 +499,13 @@ export default function CartPage() {
             {postalError && <p className="text-sm text-red-600">{postalError}</p>}
           </div>
 
+          {ratesError && <p className="text-sm text-red-600">{ratesError}</p>}
           {rates.length > 0 && (
             <div className="space-y-2 rounded-[18px] bg-white p-4 shadow-sm">
               <h2 className="font-medium">
-                {t("Canada Post (mock rates)", "Canada Post (tarifas simuladas)", lang)}
+                {ratesSource === "cpc"
+                  ? t("Canada Post", "Canada Post", lang)
+                  : t("Canada Post (estimated)", "Canada Post (estimado)", lang)}
               </h2>
               {rates.map((rate) => (
                 <label
@@ -530,6 +601,11 @@ export default function CartPage() {
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
+      {canceled && (
+        <p className="text-sm text-coal/70">
+          {t("Payment was not completed. Your cart is still here.", "El pago no se completó. Tu carrito sigue aquí.", lang)}
+        </p>
+      )}
 
       <button
         type="submit"
@@ -538,7 +614,9 @@ export default function CartPage() {
       >
         {submitting
           ? t("Placing order…", "Enviando pedido…", lang)
-          : t("Place order", "Confirmar pedido", lang)}
+          : process.env.NEXT_PUBLIC_SQUARE_PAY
+            ? t("Pay with Square", "Pagar con Square", lang)
+            : t("Place order", "Confirmar pedido", lang)}
       </button>
     </form>
   );

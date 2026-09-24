@@ -23,7 +23,7 @@ function AccountIcon() {
   return (
     <Link
       href={href}
-      className="flex h-9 w-9 items-center justify-center text-coal/80 transition-colors hover:text-berry"
+      className="flex h-9 w-9 items-center justify-center text-white transition-colors hover:text-white/80"
       aria-label={label}
       aria-busy={loading}
     >
@@ -47,7 +47,7 @@ function CartIcon() {
   return (
     <Link
       href="/cart"
-      className="relative flex h-9 w-9 items-center justify-center text-coal/80 transition-colors hover:text-berry"
+      className="relative flex h-9 w-9 items-center justify-center text-white transition-colors hover:text-white/80"
       aria-label={t("Cart", "Carrito", lang)}
     >
       <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden>
@@ -75,12 +75,12 @@ export function Header() {
 
   return (
     <>
-      <header className="sticky top-0 z-50 border-b border-blush/50 bg-blush/95 backdrop-blur-sm">
-        <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center px-2 py-2 sm:px-3">
+      <header className="site-header sticky top-0 z-50">
+        <div className="grid h-full w-full grid-cols-[1fr_auto_1fr] items-center px-2 py-1 sm:px-3">
           <button
             type="button"
             onClick={() => setDrawerOpen(true)}
-            className="flex h-10 w-10 items-center justify-center justify-self-start text-coal/80 transition-colors hover:text-berry"
+            className="flex h-10 w-10 items-center justify-center justify-self-start text-white transition-colors hover:text-white/80"
             aria-label={t("Open menu", "Abrir menú", lang)}
           >
             <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden>
@@ -90,11 +90,11 @@ export function Header() {
 
           <Link href="/" className="justify-self-center">
             <Image
-              src="/logos/wordmark.png"
+              src="/logos/wordmark-sticker-2.png"
               alt="Sweetbites"
-              width={367}
-              height={219}
-              className="h-20 w-auto sm:h-24"
+              width={836}
+              height={482}
+              className="h-20 w-auto max-w-[40vw] sm:h-28 sm:max-w-none lg:h-32"
               priority
             />
           </Link>

@@ -3,9 +3,11 @@
 import { InquiryForm } from "@/components/InquiryForm";
 import { useLang } from "@/lib/lang";
 import { t } from "@/lib/format";
+import { useSitePageBody, type ContactBody } from "@/lib/site-pages";
 
 export default function ContactPage() {
   const { lang } = useLang();
+  const body = useSitePageBody("contact") as ContactBody;
 
   return (
     <div className="relative z-10 space-y-6">
@@ -14,11 +16,7 @@ export default function ContactPage() {
           {t("Contact", "Contacto", lang)}
         </h1>
         <p className="mt-2 text-sm text-coal/75">
-          {t(
-            "Questions about an order or custom request? Send us a message.",
-            "¿Preguntas sobre un pedido o algo personalizado? Escríbenos.",
-            lang,
-          )}
+          {lang === "es" ? body.intro_es : body.intro_en}
         </p>
       </div>
       <InquiryForm type="contact" />

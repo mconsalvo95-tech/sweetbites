@@ -204,7 +204,7 @@ export function ProductDetail({ product }: Props) {
           <button
             type="button"
             onClick={() => setQty((q) => Math.max(1, q - 1))}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-cream text-lg"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-blush/35 text-lg"
           >
             −
           </button>
@@ -212,7 +212,7 @@ export function ProductDetail({ product }: Props) {
           <button
             type="button"
             onClick={() => setQty((q) => q + 1)}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-cream text-lg"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-blush/35 text-lg"
           >
             +
           </button>

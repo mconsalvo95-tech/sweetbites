@@ -20,18 +20,17 @@ function InstagramIcon() {
   );
 }
 
+function FacebookIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M14 8h3V4h-3c-2.8 0-5 2.2-5 5v2H6v4h3v9h4v-9h3.2l.8-4H13V9c0-.6.4-1 1-1z" />
+    </svg>
+  );
+}
+
 export function SocialLinks({ lang, className = "" }: { lang: Lang; className?: string }) {
   return (
     <div className={`flex items-center gap-3 ${className}`}>
-      <a
-        href={shop.whatsapp}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex h-10 w-10 items-center justify-center rounded-full bg-[#25D366] text-white transition-transform hover:scale-105 active:scale-95"
-        aria-label={t("WhatsApp", "WhatsApp", lang)}
-      >
-        <WhatsAppIcon />
-      </a>
       <a
         href={shop.instagram}
         target="_blank"
@@ -40,6 +39,24 @@ export function SocialLinks({ lang, className = "" }: { lang: Lang; className?: 
         aria-label={t("Instagram", "Instagram", lang)}
       >
         <InstagramIcon />
+      </a>
+      <a
+        href={shop.facebook}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex h-10 w-10 items-center justify-center rounded-full bg-[#1877F2] text-white transition-transform hover:scale-105 active:scale-95"
+        aria-label={t("Facebook", "Facebook", lang)}
+      >
+        <FacebookIcon />
+      </a>
+      <a
+        href={shop.whatsapp}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex h-10 w-10 items-center justify-center rounded-full bg-[#25D366] text-white transition-transform hover:scale-105 active:scale-95"
+        aria-label={t("WhatsApp", "WhatsApp", lang)}
+      >
+        <WhatsAppIcon />
       </a>
     </div>
   );

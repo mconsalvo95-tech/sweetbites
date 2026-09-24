@@ -3,9 +3,11 @@
 import { InquiryForm } from "@/components/InquiryForm";
 import { useLang } from "@/lib/lang";
 import { t } from "@/lib/format";
+import { useSitePageBody, type WholesaleBody } from "@/lib/site-pages";
 
 export default function WholesalePage() {
   const { lang } = useLang();
+  const body = useSitePageBody("wholesale") as WholesaleBody;
 
   return (
     <div className="relative z-10 space-y-6">
@@ -14,11 +16,7 @@ export default function WholesalePage() {
           {t("Wholesale", "Mayoreo", lang)}
         </h1>
         <p className="mt-2 text-sm text-coal/75">
-          {t(
-            "Cafés, offices, and events — tell us what you need and we'll get back to you.",
-            "Cafés, oficinas y eventos — cuéntanos qué necesitas y te responderemos.",
-            lang,
-          )}
+          {lang === "es" ? body.intro_es : body.intro_en}
         </p>
       </div>
       <InquiryForm type="wholesale" />

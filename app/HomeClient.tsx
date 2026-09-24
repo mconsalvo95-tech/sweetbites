@@ -1,15 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useLang } from "@/lib/lang";
-import { formatCad, pickDesc, pickName, t } from "@/lib/format";
-import { PRODUCTS } from "@/lib/catalog";
-import type { Product } from "@/lib/types";
+import { t } from "@/lib/format";
 import { HomeCta } from "@/components/FulfillmentPicker";
 import { HomeSlider, type HomeSlide } from "@/components/HomeSlider";
 import { InquiryForm } from "@/components/InquiryForm";
 import { SocialLinks } from "@/components/SocialLinks";
+import { useSitePageBody, type AboutBody } from "@/lib/site-pages";
 
 const REVIEW_SLIDES: HomeSlide[] = [
   {
@@ -54,38 +52,9 @@ const REVIEW_SLIDES: HomeSlide[] = [
   },
 ];
 
-const TOP_SLUGS = ["brown-butter-chocolate-chip", "fudge-brownie", "cinnamon-roll"];
-
-function topSellers(products: Product[]) {
-  return TOP_SLUGS.map(
-    (slug) => products.find((p) => p.slug === slug) ?? PRODUCTS.find((p) => p.slug === slug)!,
-  );
-}
-
-const VALUES = [
-  {
-    en: "Small batches, baked fresh",
-    es: "Lotes pequeños, horneados frescos",
-  },
-  {
-    en: "Real butter, seasonal flavors",
-    es: "Mantequilla real, sabores de temporada",
-  },
-  {
-    en: "Pickup, local delivery, or ship",
-    es: "Recoger, entrega local o envío",
-  },
-];
-
-export function HomePageContent({
-  promoSlides,
-  products,
-}: {
-  promoSlides: HomeSlide[];
-  products: Product[];
-}) {
+export function HomePageContent({ promoSlides }: { promoSlides: HomeSlide[] }) {
   const { lang } = useLang();
-  const sellers = topSellers(products);
+  const about = useSitePageBody("about") as AboutBody;
 
   return (
     <>
@@ -107,80 +76,37 @@ export function HomePageContent({
       </div>
 
       <div className="relative z-10 mx-auto max-w-6xl space-y-10 px-4 pt-6">
-      {/* Short CTA under sliders */}
-      <section className="text-center">
-        <p className="text-base text-coal/75">
-          {t(
-            "Handmade cookies, brownies, and cakes — pickup, local delivery, or ship across Canada.",
-            "Galletas, brownies y pasteles hechos a mano — recoger, entrega local o envío por Canadá.",
-            lang,
-          )}
-        </p>
-        <div className="mt-4">
-          <HomeCta />
-        </div>
-      </section>
+        <section>
+          <h2 className="font-display text-xl uppercase text-coal">
+            {t("Our history", "Nuestra historia", lang)}
+          </h2>
+          {about.photo_url ? (
+            <img src={about.photo_url} alt="" className="mt-4 aspect-[16/9] w-full rounded-[18px] object-cover" />
+          ) : null}
+          <div className="mt-4 space-y-3 text-sm leading-relaxed text-coal/85">
+            <p>{lang === "es" ? about.p1_es : about.p1_en}</p>
+            <p>{lang === "es" ? about.p2_es : about.p2_en}</p>
+          </div>
+          <Link href="/about" className="mt-3 inline-block text-sm font-medium text-berry hover:underline">
+            {t("Read more", "Leer más", lang)}
+          </Link>
+          <div className="mt-6">
+            <HomeCta />
+          </div>
+        </section>
 
-      {/* Top sellers */}
-      <section>
-        <h2 className="font-display text-xl uppercase text-coal">
-          {t("Top sellers", "Más vendidos", lang)}
-        </h2>
-        <div className="mt-4 space-y-3">
-          {sellers.map((product) => (
-            <Link
-              key={product.id}
-              href={`/order/${product.slug}`}
-              className="product-card flex gap-3 rounded-[18px] bg-white p-3 shadow-sm"
-            >
-              <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl">
-                <Image src={product.imageUrl} alt="" fill unoptimized={product.imageUrl.startsWith("http")} className="object-cover" sizes="64px" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="font-display font-semibold text-berry">{pickName(product, lang)}</p>
-                <p className="line-clamp-1 text-sm text-coal/70">{pickDesc(product, lang)}</p>
-                <p className="mt-1 text-sm font-bold text-berry">{formatCad(product.priceCents)}</p>
-              </div>
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      {/* Brand values */}
-      <section className="rounded-[18px] bg-white p-5 shadow-sm">
-        <h2 className="font-display text-lg uppercase text-coal">
-          {t("Why Sweetbites", "Por qué Sweetbites", lang)}
-        </h2>
-        <ul className="mt-3 space-y-2 text-sm text-coal/80">
-          {VALUES.map((v) => (
-            <li key={v.en}>✦ {lang === "es" ? v.es : v.en}</li>
-          ))}
-        </ul>
-      </section>
-
-      {/* Promo strip */}
-      <section className="rounded-[18px] bg-mint px-5 py-4 text-center shadow-sm">
-        <p className="font-display text-lg uppercase text-coal">
-          {t("Free pickup on orders $30+", "Recogida gratis en pedidos $30+", lang)}
-        </p>
-        <p className="mt-1 text-sm text-coal/75">
-          {t("Local delivery $6 flat · Ships Canada-wide", "Entrega local $6 fijo · Envío a todo Canadá", lang)}
-        </p>
-      </section>
-
-      {/* Social + subscribe */}
-      <section className="rounded-[18px] bg-white p-5 shadow-sm">
-        <h2 className="font-display text-lg uppercase text-coal">
-          {t("Follow along", "Síguenos", lang)}
-        </h2>
-        <SocialLinks lang={lang} className="mt-4" />
-        <div className="mt-6">
-          <p className="mb-2 text-sm font-medium text-coal">
-            {t("Get bakery updates", "Recibe novedades", lang)}
-          </p>
-          <InquiryForm type="newsletter" />
-        </div>
-      </section>
+        <section className="rounded-[18px] bg-white p-5 shadow-sm">
+          <h2 className="font-display text-lg uppercase text-coal">
+            {t("Follow us", "Síguenos", lang)}
+          </h2>
+          <SocialLinks lang={lang} className="mt-4" />
+          <div className="mt-6">
+            <p className="mb-2 text-sm font-medium text-coal">
+              {t("Get our newest updates", "Recibe nuestras novedades", lang)}
+            </p>
+            <InquiryForm type="newsletter" />
+          </div>
+        </section>
       </div>
     </>
   );

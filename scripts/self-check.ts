@@ -8,6 +8,8 @@ import { submitOrder, getOrder } from "../lib/orders";
 import { quotePromo } from "../lib/promos";
 import { customerOrderEmail, ownerOrderEmail } from "../lib/order-email";
 import { canCustomerCancel } from "../lib/types";
+import { expectedSquareSignature, verifySquareSignature } from "../lib/square";
+import { parsePriceQuotes } from "../lib/shipping";
 
 const LOCAL_FILE = join(process.cwd(), ".local-orders.json");
 
@@ -16,6 +18,19 @@ function assert(cond: unknown, msg: string): asserts cond {
 }
 
 async function main() {
+  const parsed = parsePriceQuotes([
+    {
+      serviceCode: "DOM.RP",
+      serviceName: "Regular Parcel",
+      priceDetails: { due: 12.45 },
+      serviceStandard: { expectedTransitTime: 4 },
+    },
+    { serviceCode: "INT.XP", priceDetails: { due: 40 } },
+  ]);
+  assert(parsed.length === 1 && parsed[0].code === "DOM.RP", "Should keep domestic quotes only");
+  assert(parsed[0].rateCents === 1245, "due 12.45 dollars is 1245 cents");
+  assert(parsed[0].etaEn.includes("4"), "ETA should use transit days");
+
   const sweet10 = quotePromo(
     { code: "SWEET10", kind: "percent", value: 10, minFoodCents: 0, active: true, expiresAt: null },
     1890,
@@ -149,9 +164,16 @@ async function main() {
   if (promoOrder.totalCents !== 1701) throw new Error(`Expected 1701c total, got ${promoOrder.totalCents}`);
   console.log(`OK: promo ${promoOrder.promoCode} discount=${promoOrder.discountCents}c total=${promoOrder.totalCents}c`);
 
-  assert(canCustomerCancel("pending") && canCustomerCancel("ready"), "Customer can cancel pending/ready");
+  assert(canCustomerCancel("pending"), "Customer can cancel pending");
+  assert(!canCustomerCancel("ready"), "Ready is not a status");
   assert(!canCustomerCancel("completed") && !canCustomerCancel("sent"), "Customer cannot cancel finished orders");
   assert(!canCustomerCancel("cancelled"), "Already cancelled is not cancellable");
+
+  const sqBody = '{"type":"payment.updated"}';
+  const sqUrl = "https://sweetbites.shop/api/square/webhook";
+  const sqSig = expectedSquareSignature(sqUrl, sqBody, "square-test-key");
+  assert(verifySquareSignature(sqUrl, sqBody, sqSig, "square-test-key"), "Square signature should verify");
+  assert(!verifySquareSignature(sqUrl, sqBody, "nope", "square-test-key"), "Bad Square signature should fail");
 }
 
 main().catch((err) => {

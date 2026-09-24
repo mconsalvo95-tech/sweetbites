@@ -3,12 +3,15 @@
 import { useContactModal } from "@/components/ContactModal";
 import { useLang } from "@/lib/lang";
 import { t } from "@/lib/format";
-import { allHoursLines, shop } from "@/lib/shop";
+import { shop } from "@/lib/shop";
 import { SocialLinks } from "@/components/SocialLinks";
+import { useSitePageBody, type LocationBody } from "@/lib/site-pages";
 
 export function LocationContent() {
   const { lang } = useLang();
   const { openContact } = useContactModal();
+  const body = useSitePageBody("location") as LocationBody;
+  const hours = lang === "es" ? body.hours_es : body.hours_en;
 
   return (
     <div className="relative z-10 space-y-6">
@@ -20,18 +23,18 @@ export function LocationContent() {
         <div>
           <h2 className="font-medium text-berry">{shop.name}</h2>
           <p className="mt-2 text-coal/80">
-            {shop.street}
+            {body.street}
             <br />
-            {shop.cityLine}
+            {body.cityLine}
             <br />
-            {shop.country}
+            {body.country}
           </p>
         </div>
 
         <div>
           <h2 className="font-medium">{t("Hours", "Horario", lang)}</h2>
           <ul className="mt-2 space-y-1 text-sm text-coal/80">
-            {allHoursLines(lang).map((line) => (
+            {hours.map((line) => (
               <li key={line}>{line}</li>
             ))}
           </ul>
@@ -47,13 +50,11 @@ export function LocationContent() {
           {t("Contact us", "Contáctanos", lang)}
         </button>
 
-        <p className="text-sm text-coal/60">
-          {t(
-            "Placeholder address for the mockup. Real shop details coming soon.",
-            "Dirección provisional para el mockup. Pronto los datos reales de la tienda.",
-            lang,
-          )}
-        </p>
+        {(lang === "es" ? body.placeholder_es : body.placeholder_en) ? (
+          <p className="text-sm text-coal/60">
+            {lang === "es" ? body.placeholder_es : body.placeholder_en}
+          </p>
+        ) : null}
       </div>
     </div>
   );

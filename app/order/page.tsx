@@ -81,7 +81,7 @@ export default function OrderPage() {
             }}
             className="scroll-mt-32"
           >
-            <h2 className="font-display mb-3 rounded-xl bg-berry px-4 py-2.5 text-center text-lg uppercase text-white">
+            <h2 className="font-display gloss mb-3 rounded-xl bg-berry px-4 py-2.5 text-center text-lg uppercase text-white">
               {lang === "es" ? category.nameEs : category.nameEn}
             </h2>
             <div className="space-y-3">

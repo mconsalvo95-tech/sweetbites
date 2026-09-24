@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect } from "react";
 
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/lang";
 import { t } from "@/lib/format";
-import { shop, shopAddressLine } from "@/lib/shop";
 import { SocialLinks } from "./SocialLinks";
 
 const navLinks = [
@@ -17,7 +17,6 @@ const navLinks = [
   { href: "/faq", labelEn: "FAQ", labelEs: "Preguntas" },
   { href: "/events", labelEn: "Events", labelEs: "Eventos" },
   { href: "/stores", labelEn: "Find us in stores", labelEs: "Tiendas" },
-  { href: "/location", labelEn: "Location", labelEs: "Dónde estamos" },
   { href: "/contact", labelEn: "Contact", labelEs: "Contacto" },
 ];
 
@@ -58,40 +57,30 @@ export function SideDrawer({ open, onClose, onContact }: SideDrawerProps) {
         aria-label={t("Menu", "Menú", lang)}
         aria-hidden={!open}
       >
-        <div className="relative bg-blush px-4 py-8 text-center">
+        <div className="site-header relative flex items-center px-3 pr-12">
           <button
             type="button"
             onClick={onClose}
-            className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-berry text-white"
+            className="absolute right-3 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-berry text-white"
             aria-label={t("Close menu", "Cerrar menú", lang)}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
               <path d="M10 4L6 8L10 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
-          <Link
-            href="/"
-            onClick={onClose}
-            className="font-display font-display-pink text-3xl uppercase tracking-tight"
-          >
-            Sweetbites
+          <Link href="/" onClick={onClose} className="flex h-full w-full items-center justify-center">
+            <Image
+              src="/logos/wordmark-sidebar-sticker.png"
+              alt="Sweetbites"
+              width={727}
+              height={181}
+              className="h-auto max-h-[70%] w-[80%] object-contain"
+            />
           </Link>
         </div>
 
         <div className="flex flex-1 flex-col px-4 py-5">
-          <button
-            type="button"
-            onClick={() => {
-              onClose();
-              onContact();
-            }}
-            className="btn-primary w-full rounded-full bg-berry px-4 py-3 text-left text-sm font-medium text-white shadow-md hover:bg-berry-hover"
-          >
-            <span className="block font-semibold">{shop.name}</span>
-            <span className="block text-white/90">{shopAddressLine()}</span>
-          </button>
-
-          <div className="mt-6">
+          <div>
             <h2 className="text-sm font-semibold text-coal">
               {t("Menu", "Menú", lang)}
             </h2>

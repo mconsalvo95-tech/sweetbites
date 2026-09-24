@@ -4,16 +4,17 @@ import type { Lang } from "./types";
 export const LOCAL_DELIVERY_CENTS = 600;
 
 export const shop = {
-  name: "Sweetbites Toronto",
-  street: "124 King Street W",
-  cityLine: "Toronto, ON M5V 2T6",
+  name: "Sweetbites",
+  street: "195 Lougheed Close",
+  cityLine: "Red Deer, AB T4R 3G7",
   country: "Canada",
   phoneDisplay: "+1 416 555 0100",
   phoneTel: "tel:+14165550100",
   whatsapp: "https://wa.me/14165550100",
   instagram: "https://www.instagram.com/sweetbites.rd/",
+  facebook: "https://www.facebook.com/sweetbites.rd",
   mapsUrl:
-    "https://www.google.com/maps/search/?api=1&query=124+King+Street+W,+Toronto,+ON+M5V+2T6",
+    "https://www.google.com/maps/search/?api=1&query=195+Lougheed+Close,+Red+Deer,+AB+T4R+3G7",
 } as const;
 
 const DAY_NAMES: Record<number, { en: string; es: string }> = {

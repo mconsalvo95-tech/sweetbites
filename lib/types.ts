@@ -76,6 +76,7 @@ export type OrderResult = {
 export type OrderRecord = {
   id: string;
   status: string;
+  paymentStatus?: "paid" | "unpaid";
   fulfillment: Fulfillment;
   lang: Lang;
   customerName: string;
@@ -98,5 +99,5 @@ export type OrderRecord = {
 };
 
 export function canCustomerCancel(status: string) {
-  return status === "pending" || status === "ready";
+  return status === "pending";
 }

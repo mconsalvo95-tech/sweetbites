@@ -2,12 +2,18 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, Fragment } from "react";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/lang";
 import { formatCad, t } from "@/lib/format";
 import { getSupabaseBrowser } from "@/lib/supabase-browser";
 import type { PromoKind } from "@/lib/promos";
+import {
+  SITE_PAGE_DEFAULTS,
+  SITE_PAGE_SLUGS,
+  sitePageTabLabel,
+  type SitePageSlug,
+} from "@/lib/site-pages";
 
 const inputClass =
   "w-full rounded-xl border border-blush/60 bg-white px-3 py-2 text-sm text-coal outline-none focus:border-berry";
@@ -29,6 +35,7 @@ type ProductRow = {
   price_cents: number;
   active: boolean;
   category_id?: string;
+  image_url?: string;
   priceDraft?: string;
 };
 
@@ -60,6 +67,7 @@ type OrderRow = {
   ship_city: string | null;
   ship_province: string | null;
   ship_postal: string | null;
+  payment_status?: "paid" | "unpaid";
   order_items: OrderItemRow[] | null;
 };
 
@@ -68,20 +76,19 @@ const ADMIN_TABS = [
   { id: "menu", labelEn: "Menu prices", labelEs: "Precios del menú" },
   { id: "offers", labelEn: "Weekly offers", labelEs: "Ofertas de la semana" },
   { id: "promos", labelEn: "Promo codes", labelEs: "Códigos de promo" },
+  { id: "pages", labelEn: "Pages", labelEs: "Páginas" },
   { id: "access", labelEn: "Owner access", labelEs: "Acceso de dueña" },
 ] as const;
 
 type AdminTab = (typeof ADMIN_TABS)[number]["id"];
 
-const ORDER_STATUSES = ["pending", "ready", "completed", "sent", "cancelled"] as const;
+const ORDER_STATUSES = ["pending", "completed", "sent", "cancelled"] as const;
 type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 function orderStatusLabel(status: string, lang: "en" | "es") {
   switch (status) {
     case "pending":
       return t("Pending", "Pendiente", lang);
-    case "ready":
-      return t("Ready", "Listo", lang);
     case "completed":
       return t("Completed", "Completado", lang);
     case "sent":
@@ -95,6 +102,84 @@ function orderStatusLabel(status: string, lang: "en" | "es") {
 
 function isOrderDone(status: string) {
   return status === "completed" || status === "sent";
+}
+
+function fulfillmentLabel(fulfillment: OrderRow["fulfillment"], lang: "en" | "es") {
+  if (fulfillment === "delivery") return t("Delivery", "Entrega", lang);
+  if (fulfillment === "ship") return t("Ship", "Envío", lang);
+  return t("Pickup", "Recoger", lang);
+}
+
+function orderItemSummary(row: OrderRow, lang: "en" | "es") {
+  return (row.order_items ?? [])
+    .map((item) => {
+      const name =
+        lang === "es"
+          ? item.name_es || item.products?.name_es
+          : item.name_en || item.products?.name_en;
+      return `${item.qty}× ${name || item.product_id || ""}`;
+    })
+    .join(", ");
+}
+
+function canEraseOrders(status: string) {
+  return status === "completed" || status === "sent" || status === "cancelled";
+}
+
+function csvCell(value: string) {
+  if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
+
+function downloadOrdersExcel(rows: OrderRow[]) {
+  const header = [
+    "Order ID",
+    "Date",
+    "Status",
+    "Payment",
+    "Fulfillment",
+    "Customer",
+    "Email",
+    "Phone",
+    "Items",
+    "Food",
+    "Shipping",
+    "Discount",
+    "Total",
+    "Promo",
+    "Address",
+    "Notes",
+  ];
+  const lines = [
+    header,
+    ...rows.map((row) => [
+      row.id,
+      new Date(row.created_at).toISOString(),
+      row.status,
+      row.payment_status ?? "",
+      row.fulfillment,
+      row.customer_name,
+      row.customer_email ?? "",
+      row.phone,
+      (row.order_items ?? [])
+        .map((item) => `${item.qty}x ${item.name_en || item.products?.name_en || item.product_id || ""}`)
+        .join("; "),
+      dollars(row.food_cents),
+      dollars(row.shipping_cents),
+      dollars(row.discount_cents),
+      dollars(row.total_cents),
+      row.promo_code ?? "",
+      [row.ship_street, row.ship_city, row.ship_province, row.ship_postal].filter(Boolean).join(", "),
+      row.notes ?? "",
+    ]),
+  ];
+  const csv = `\uFEFF${lines.map((line) => line.map((cell) => csvCell(String(cell))).join(",")).join("\n")}`;
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `sweetbites-orders-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 function doneStatusFor(fulfillment: OrderRow["fulfillment"]): OrderStatus {
@@ -161,6 +246,30 @@ function slugify(raw: string) {
     .slice(0, 40);
 }
 
+const OFFER_IMAGE_TYPES: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+};
+
+async function uploadAdminImage(file: File) {
+  const supabase = getSupabaseBrowser();
+  if (!supabase) throw new Error("Supabase is not configured");
+  const ext = OFFER_IMAGE_TYPES[file.type];
+  if (!ext) throw new Error("Use a JPG, PNG, WebP, or GIF");
+  if (file.size > 8 * 1024 * 1024) throw new Error("Keep the image under 8 MB");
+  const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const { error } = await supabase.storage.from("offer-images").upload(path, file, {
+    contentType: file.type,
+    upsert: false,
+  });
+  if (error) throw error;
+  const { data } = supabase.storage.from("offer-images").getPublicUrl(path);
+  if (!data.publicUrl) throw new Error("Upload failed");
+  return data.publicUrl;
+}
+
 type CategoryRow = { id: string; name_en: string; name_es: string };
 
 export function AdminClient() {
@@ -183,6 +292,7 @@ export function AdminClient() {
   const [newDescEn, setNewDescEn] = useState("");
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [openOrderId, setOpenOrderId] = useState<string | null>(null);
+  const [eraseArmed, setEraseArmed] = useState(false);
   const [offers, setOffers] = useState<OfferRow[]>([]);
   const [status, setStatus] = useState("");
   const [grantEmail, setGrantEmail] = useState("");
@@ -191,6 +301,10 @@ export function AdminClient() {
   const [newKind, setNewKind] = useState<PromoKind>("percent");
   const [newValue, setNewValue] = useState("10");
   const [newMin, setNewMin] = useState("0");
+  const [editingPromoIdx, setEditingPromoIdx] = useState<number | null>(null);
+  const [editingPromoOriginal, setEditingPromoOriginal] = useState<string | null>(null);
+  const [pageSlug, setPageSlug] = useState<SitePageSlug>("about");
+  const [pageBody, setPageBody] = useState<Record<string, unknown>>(SITE_PAGE_DEFAULTS.about);
 
   const [draftOffer, setDraftOffer] = useState<OfferRow>(emptyOffer);
 
@@ -201,11 +315,11 @@ export function AdminClient() {
       await Promise.all([
         supabase.from("promo_codes").select("*").order("code"),
         supabase.from("weekly_offers").select("*").order("sort"),
-        supabase.from("products").select("id, name_en, name_es, slug, price_cents, active, category_id").order("name_en"),
+        supabase.from("products").select("id, name_en, name_es, slug, price_cents, active, category_id, image_url").order("name_en"),
         supabase
           .from("orders")
           .select(
-            "id, created_at, status, fulfillment, customer_name, customer_email, phone, notes, food_cents, shipping_cents, discount_cents, total_cents, promo_code, ship_street, ship_city, ship_province, ship_postal, order_items ( qty, unit_price_cents, options_json, product_id, name_en, name_es, products ( name_en, name_es ) )",
+            "id, created_at, status, fulfillment, customer_name, customer_email, phone, notes, food_cents, shipping_cents, discount_cents, total_cents, promo_code, payment_status, ship_street, ship_city, ship_province, ship_postal, order_items ( qty, unit_price_cents, options_json, product_id, name_en, name_es, products ( name_en, name_es ) )",
           )
           .order("created_at", { ascending: false })
           .limit(50),
@@ -224,7 +338,11 @@ export function AdminClient() {
         };
       }),
     );
-    setOrders((orderData as OrderRow[]) ?? []);
+    setOrders(
+      ((orderData as unknown as OrderRow[]) ?? []).map((row) =>
+        row.status === "ready" ? { ...row, status: "pending" } : row,
+      ),
+    );
     setCategories((catData as CategoryRow[]) ?? []);
     if (catData?.[0]?.id) setNewCat((c) => c || catData[0].id);
   }, []);
@@ -232,6 +350,27 @@ export function AdminClient() {
   useEffect(() => {
     if (profile?.role === "admin") void load();
   }, [profile?.role, load]);
+
+  useEffect(() => {
+    if (profile?.role !== "admin") return;
+    const sb = getSupabaseBrowser();
+    if (!sb) return;
+    setPageBody({ ...SITE_PAGE_DEFAULTS[pageSlug] });
+    void sb
+      .from("site_pages")
+      .select("body")
+      .eq("slug", pageSlug)
+      .maybeSingle()
+      .then(({ data }) => {
+        const base = SITE_PAGE_DEFAULTS[pageSlug];
+        const raw = data?.body;
+        if (raw && typeof raw === "object" && !Array.isArray(raw) && Object.keys(raw).length) {
+          setPageBody({ ...base, ...(raw as Record<string, unknown>) });
+        } else {
+          setPageBody({ ...base });
+        }
+      });
+  }, [profile?.role, pageSlug]);
 
   if (loading) {
     return <p className="text-center text-coal/60">{t("Loading…", "Cargando…", lang)}</p>;
@@ -264,7 +403,7 @@ export function AdminClient() {
     window.setTimeout(() => setStatus(""), 2500);
   };
 
-  const savePromo = async (row: PromoRow, isNew = false) => {
+  const savePromo = async (row: PromoRow, isNew = false, originalCode?: string) => {
     const payload = {
       code: row.code.trim().toUpperCase(),
       kind: row.kind,
@@ -277,14 +416,23 @@ export function AdminClient() {
       flash(t("Code and value are required", "Código y valor son obligatorios", lang));
       return;
     }
-    const { error } = isNew
-      ? await supabase.from("promo_codes").insert(payload)
-      : await supabase.from("promo_codes").update(payload).eq("code", payload.code);
+    const prevCode = (originalCode ?? row.code).trim().toUpperCase();
+    let error = null as { message: string } | null;
+    if (isNew) {
+      ({ error } = await supabase.from("promo_codes").insert(payload));
+    } else if (prevCode !== payload.code) {
+      ({ error } = await supabase.from("promo_codes").delete().eq("code", prevCode));
+      if (!error) ({ error } = await supabase.from("promo_codes").insert(payload));
+    } else {
+      ({ error } = await supabase.from("promo_codes").update(payload).eq("code", prevCode));
+    }
     if (error) {
       flash(error.message);
       return;
     }
     flash(t("Saved", "Guardado", lang));
+    setEditingPromoIdx(null);
+    setEditingPromoOriginal(null);
     if (isNew) {
       setNewCode("");
       setNewValue("10");
@@ -405,17 +553,44 @@ export function AdminClient() {
 
   const saveProduct = async (row: ProductRow) => {
     const price_cents = toCents(row.priceDraft ?? dollars(row.price_cents));
+    const image_url = row.image_url?.trim() || "/test-images/swb-banner.png";
     const { error } = await supabase
       .from("products")
-      .update({ price_cents, active: row.active })
+      .update({ price_cents, active: row.active, image_url })
       .eq("id", row.id);
     if (error) {
       flash(error.message);
       return;
     }
     setProducts((rows) =>
-      rows.map((r) => (r.id === row.id ? { ...r, price_cents, priceDraft: undefined } : r)),
+      rows.map((r) =>
+        r.id === row.id ? { ...r, price_cents, image_url, priceDraft: undefined } : r,
+      ),
     );
+    flash(t("Saved", "Guardado", lang));
+  };
+
+  const uploadProductImage = async (row: ProductRow, file: File) => {
+    try {
+      const image_url = await uploadAdminImage(file);
+      const next = { ...row, image_url };
+      setProducts((rows) => rows.map((r) => (r.id === row.id ? next : r)));
+      await saveProduct(next);
+    } catch (err) {
+      flash(err instanceof Error ? err.message : t("Upload failed", "No se pudo subir", lang));
+    }
+  };
+
+  const saveSitePage = async () => {
+    const { error } = await supabase.from("site_pages").upsert({
+      slug: pageSlug,
+      body: pageBody,
+      updated_at: new Date().toISOString(),
+    });
+    if (error) {
+      flash(error.message);
+      return;
+    }
     flash(t("Saved", "Guardado", lang));
   };
 
@@ -498,6 +673,30 @@ export function AdminClient() {
 
   const visibleOrders = orders.filter((row) => row.status === orderFilter);
 
+  const downloadVisibleOrders = () => {
+    if (!visibleOrders.length) return;
+    downloadOrdersExcel(visibleOrders);
+    flash(t("Excel file downloaded. Erase only after you have the file.", "Archivo de Excel descargado. Borra solo cuando ya tengas el archivo.", lang));
+  };
+
+  const eraseVisibleOrders = async () => {
+    if (!canEraseOrders(orderFilter) || !visibleOrders.length) return;
+    if (!eraseArmed) {
+      setEraseArmed(true);
+      flash(t("Click erase again to permanently delete this list.", "Haz clic otra vez para borrar esta lista para siempre.", lang));
+      return;
+    }
+    const ids = visibleOrders.map((row) => row.id);
+    const { error } = await supabase.from("orders").delete().in("id", ids);
+    setEraseArmed(false);
+    if (error) {
+      flash(error.message);
+      return;
+    }
+    setOrders((rows) => rows.filter((row) => !ids.includes(row.id)));
+    flash(t("Orders deleted.", "Pedidos borrados.", lang));
+  };
+
   return (
     <div className="space-y-8">
       <div>
@@ -531,7 +730,10 @@ export function AdminClient() {
               <button
                 key={s}
                 type="button"
-                onClick={() => setOrderFilter(s)}
+                onClick={() => {
+                  setOrderFilter(s);
+                  setEraseArmed(false);
+                }}
                 className={`rounded-full px-3 py-1.5 text-sm font-medium ${
                   orderFilter === s ? "bg-coal text-white" : "bg-white text-coal/70 shadow-sm hover:bg-blush/40"
                 }`}
@@ -542,6 +744,38 @@ export function AdminClient() {
             );
           })}
         </div>
+        {visibleOrders.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={downloadVisibleOrders}
+              className="rounded-xl bg-white px-3 py-2 text-sm font-medium text-coal shadow-sm hover:bg-blush/40"
+            >
+              {t("Download Excel", "Descargar Excel", lang)}
+            </button>
+            {canEraseOrders(orderFilter) ? (
+              <button
+                type="button"
+                onClick={() => void eraseVisibleOrders()}
+                className={`rounded-xl px-3 py-2 text-sm font-medium ${
+                  eraseArmed ? "bg-berry text-white" : "bg-white text-coal shadow-sm hover:bg-blush/40"
+                }`}
+              >
+                {eraseArmed
+                  ? t("Click again to erase forever", "Haz clic otra vez para borrar para siempre", lang)
+                  : t("Erase these orders", "Borrar estos pedidos", lang)}
+              </button>
+            ) : (
+              <p className="text-xs text-coal/50">
+                {t(
+                  "Mark orders done first. Download Excel, then erase from Completed, Sent, or Cancelled.",
+                  "Marca los pedidos como hechos. Descarga Excel y luego borra desde Completado, Enviado o Cancelado.",
+                  lang,
+                )}
+              </p>
+            )}
+          </div>
+        )}
         {visibleOrders.length === 0 ? (
           <p className="text-sm text-coal/60">
             {orders.length === 0
@@ -549,90 +783,125 @@ export function AdminClient() {
               : t("No orders in this list.", "No hay pedidos en esta lista.", lang)}
           </p>
         ) : (
-          <div className="space-y-2">
-            {visibleOrders.map((row) => {
-              const open = openOrderId === row.id;
-              return (
-                <div key={row.id} className="rounded-2xl bg-white p-4 shadow-sm">
-                  <div className="flex flex-wrap items-center gap-2 text-sm">
-                    <button
-                      type="button"
-                      onClick={() => setOpenOrderId(open ? null : row.id)}
-                      className="min-w-0 flex-1 text-left font-medium text-coal"
-                    >
-                      #{row.id.slice(0, 8)} · {row.customer_name} · {formatCad(row.total_cents)}
-                      <span className="ml-2 font-normal text-coal/50">
-                        {" · "}
-                        {new Date(row.created_at).toLocaleString()}
-                      </span>
-                    </button>
-                    {row.status !== "cancelled" && (
-                      <label className="flex shrink-0 items-center gap-1.5 text-sm text-coal/80">
-                        <input
-                          type="checkbox"
-                          checked={isOrderDone(row.status)}
-                          onChange={(e) =>
-                            void saveOrderStatus(
-                              row.id,
-                              e.target.checked ? doneStatusFor(row.fulfillment) : "pending",
-                            )
-                          }
-                        />
-                        {t("Done", "Hecho", lang)}
-                      </label>
-                    )}
-                    <select
-                      value={row.status}
-                      onChange={(e) => void saveOrderStatus(row.id, e.target.value)}
-                      className="w-auto rounded-xl border border-blush/60 bg-white px-3 py-2 text-sm text-coal outline-none focus:border-berry"
-                    >
-                      {ORDER_STATUSES.map((s) => (
-                        <option key={s} value={s}>
-                          {orderStatusLabel(s, lang)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  {open && (
-                    <div className="mt-3 space-y-2 border-t border-blush/40 pt-3 text-sm">
-                      <p>
-                        {row.fulfillment} · {row.customer_email || "—"} · {row.phone}
-                      </p>
-                      {(row.ship_street || row.ship_city) && (
-                        <p className="text-coal/70">
-                          {[row.ship_street, row.ship_city, row.ship_province, row.ship_postal]
-                            .filter(Boolean)
-                            .join(", ")}
-                        </p>
+          <div className="overflow-x-auto rounded-2xl bg-white p-4 shadow-sm">
+            <table className="w-full min-w-[720px] text-left text-sm">
+              <thead>
+                <tr className="text-coal/60">
+                  <th className="pb-2 pr-2">{t("Done", "Hecho", lang)}</th>
+                  <th className="pb-2 pr-2">{t("Order", "Pedido", lang)}</th>
+                  <th className="pb-2 pr-2">{t("Customer", "Cliente", lang)}</th>
+                  <th className="pb-2 pr-2">{t("Items", "Artículos", lang)}</th>
+                  <th className="pb-2 pr-2">{t("Total", "Total", lang)}</th>
+                  <th className="pb-2 pr-2">{t("Type", "Tipo", lang)}</th>
+                  <th className="pb-2 pr-2">{t("Date", "Fecha", lang)}</th>
+                  <th className="pb-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {visibleOrders.map((row) => {
+                  const open = openOrderId === row.id;
+                  return (
+                    <Fragment key={row.id}>
+                      <tr className="border-t border-blush/40">
+                        <td className="py-2 pr-2">
+                          {row.status !== "cancelled" ? (
+                            <input
+                              type="checkbox"
+                              checked={isOrderDone(row.status)}
+                              aria-label={t("Done", "Hecho", lang)}
+                              onChange={(e) =>
+                                void saveOrderStatus(
+                                  row.id,
+                                  e.target.checked ? doneStatusFor(row.fulfillment) : "pending",
+                                )
+                              }
+                            />
+                          ) : null}
+                        </td>
+                        <td className="py-2 pr-2 whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => setOpenOrderId(open ? null : row.id)}
+                            className="font-medium text-berry hover:underline"
+                          >
+                            #{row.id.slice(0, 8)}
+                          </button>
+                          {row.payment_status === "unpaid" ? (
+                            <span className="ml-2 text-berry">{t("Unpaid", "Sin pagar", lang)}</span>
+                          ) : null}
+                        </td>
+                        <td className="py-2 pr-2">{row.customer_name}</td>
+                        <td className="py-2 pr-2 max-w-[220px] truncate" title={orderItemSummary(row, lang)}>
+                          {orderItemSummary(row, lang) || "—"}
+                        </td>
+                        <td className="py-2 pr-2 whitespace-nowrap font-medium text-berry">
+                          {formatCad(row.total_cents)}
+                        </td>
+                        <td className="py-2 pr-2">{fulfillmentLabel(row.fulfillment, lang)}</td>
+                        <td className="py-2 pr-2 whitespace-nowrap text-coal/60">
+                          {new Date(row.created_at).toLocaleString()}
+                        </td>
+                        <td className="py-2 whitespace-nowrap">
+                          {row.status === "pending" ? (
+                            <button
+                              type="button"
+                              onClick={() => void saveOrderStatus(row.id, "cancelled")}
+                              className="text-coal/50 hover:underline"
+                            >
+                              {t("Cancel", "Cancelar", lang)}
+                            </button>
+                          ) : row.status === "cancelled" ? (
+                            <button
+                              type="button"
+                              onClick={() => void saveOrderStatus(row.id, "pending")}
+                              className="text-coal/50 hover:underline"
+                            >
+                              {t("Restore", "Restaurar", lang)}
+                            </button>
+                          ) : null}
+                        </td>
+                      </tr>
+                      {open && (
+                        <tr className="border-t border-blush/20 bg-blush/20">
+                          <td colSpan={8} className="space-y-2 px-2 py-3 text-sm">
+                            <p>
+                              {row.customer_email || "—"} · {row.phone}
+                            </p>
+                            {(row.ship_street || row.ship_city) && (
+                              <p className="text-coal/70">
+                                {[row.ship_street, row.ship_city, row.ship_province, row.ship_postal]
+                                  .filter(Boolean)
+                                  .join(", ")}
+                              </p>
+                            )}
+                            {row.notes && <p className="text-coal/70">{row.notes}</p>}
+                            <ul className="space-y-1">
+                              {(row.order_items ?? []).map((item, i) => {
+                                const name =
+                                  lang === "es"
+                                    ? item.name_es || item.products?.name_es
+                                    : item.name_en || item.products?.name_en;
+                                return (
+                                  <li key={`${row.id}-${i}`}>
+                                    {item.qty}× {name || item.product_id} —{" "}
+                                    {formatCad(item.unit_price_cents * item.qty)}
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                            {row.promo_code && (
+                              <p className="text-berry">
+                                {row.promo_code} −{formatCad(row.discount_cents)}
+                              </p>
+                            )}
+                          </td>
+                        </tr>
                       )}
-                      {row.notes && <p className="text-coal/70">{row.notes}</p>}
-                      <ul className="space-y-1">
-                        {(row.order_items ?? []).map((item, i) => {
-                          const name =
-                            lang === "es"
-                              ? item.name_es || item.products?.name_es
-                              : item.name_en || item.products?.name_en;
-                          return (
-                            <li key={`${row.id}-${i}`}>
-                              {item.qty}× {name || item.product_id} —{" "}
-                              {formatCad(item.unit_price_cents * item.qty)}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                      {row.promo_code && (
-                        <p className="text-berry">
-                          {row.promo_code} −{formatCad(row.discount_cents)}
-                        </p>
-                      )}
-                      <p className="font-semibold text-berry">
-                        {t("Total", "Total", lang)} {formatCad(row.total_cents)}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </section>
@@ -646,6 +915,7 @@ export function AdminClient() {
             <thead>
               <tr className="text-coal/60">
                 <th className="pb-2">{t("Product", "Producto", lang)}</th>
+                <th className="pb-2">{t("Image", "Imagen", lang)}</th>
                 <th className="pb-2">{t("Price $", "Precio $", lang)}</th>
                 <th className="pb-2">{t("On menu", "En menú", lang)}</th>
                 <th className="pb-2" />
@@ -657,6 +927,21 @@ export function AdminClient() {
                   <td className="py-2">
                     <p className="font-medium">{lang === "es" ? row.name_es : row.name_en}</p>
                     {lang === "es" ? <p className="text-xs text-coal/50">{row.name_en}</p> : null}
+                  </td>
+                  <td className="py-2">
+                    {row.image_url ? (
+                      <img src={row.image_url} alt="" className="mb-1 h-12 w-12 rounded-lg object-cover" />
+                    ) : null}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      className="max-w-[140px] text-xs file:mr-1 file:rounded file:border-0 file:bg-blush/50 file:px-2 file:py-1 file:text-xs"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        if (file) void uploadProductImage(row, file);
+                      }}
+                    />
                   </td>
                   <td className="py-2">
                     <input
@@ -734,12 +1019,35 @@ export function AdminClient() {
               placeholder={t("Price $", "Precio $", lang)}
               className={inputClass}
             />
-            <input
-              value={newImage}
-              onChange={(e) => setNewImage(e.target.value)}
-              placeholder="Image URL or /test-images/…"
-              className={`${inputClass} sm:col-span-2`}
-            />
+            <div className="space-y-2 sm:col-span-2">
+              <input
+                value={newImage}
+                onChange={(e) => setNewImage(e.target.value)}
+                placeholder="Image URL or /test-images/…"
+                className={inputClass}
+              />
+              <label className="flex flex-wrap items-center gap-3 text-sm text-coal/70">
+                <span className="shrink-0 font-medium text-berry">
+                  {t("Or upload from this computer", "O sube desde esta computadora", lang)}
+                </span>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  className="max-w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-blush/50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-coal"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!file) return;
+                    void uploadAdminImage(file)
+                      .then((url) => setNewImage(url))
+                      .catch((err) =>
+                        flash(err instanceof Error ? err.message : t("Upload failed", "No se pudo subir", lang)),
+                      );
+                  }}
+                />
+              </label>
+              {newImage ? <img src={newImage} alt="" className="h-20 rounded-lg object-cover" /> : null}
+            </div>
             <input
               value={newDescEn}
               onChange={(e) => setNewDescEn(e.target.value)}
@@ -804,15 +1112,32 @@ export function AdminClient() {
               </tr>
             </thead>
             <tbody>
-              {promos.map((row) => (
-                <tr key={row.code} className="border-t border-blush/40">
-                  <td className="py-2 font-medium">{row.code}</td>
+              {promos.map((row, idx) => {
+                const editing = editingPromoIdx === idx;
+                return (
+                <tr key={`${row.code}-${idx}`} className="border-t border-blush/40">
+                  <td className="py-2">
+                    {editing ? (
+                      <input
+                        value={row.code}
+                        onChange={(e) =>
+                          setPromos((rows) =>
+                            rows.map((r, i) => (i === idx ? { ...r, code: e.target.value.toUpperCase() } : r)),
+                          )
+                        }
+                        className={`${inputClass} uppercase`}
+                      />
+                    ) : (
+                      <span className="font-medium">{row.code}</span>
+                    )}
+                  </td>
                   <td className="py-2">
                     <select
                       value={row.kind}
+                      disabled={!editing}
                       onChange={(e) =>
                         setPromos((rows) =>
-                          rows.map((r) => (r.code === row.code ? { ...r, kind: e.target.value as PromoKind } : r)),
+                          rows.map((r, i) => (i === idx ? { ...r, kind: e.target.value as PromoKind } : r)),
                         )
                       }
                       className={inputClass}
@@ -824,10 +1149,11 @@ export function AdminClient() {
                   <td className="py-2">
                     <input
                       value={row.kind === "percent" ? String(row.value) : dollars(row.value)}
+                      disabled={!editing}
                       onChange={(e) =>
                         setPromos((rows) =>
-                          rows.map((r) =>
-                            r.code === row.code
+                          rows.map((r, i) =>
+                            i === idx
                               ? {
                                   ...r,
                                   value: r.kind === "percent" ? Number(e.target.value) || 0 : toCents(e.target.value),
@@ -842,9 +1168,10 @@ export function AdminClient() {
                   <td className="py-2">
                     <input
                       value={dollars(row.min_food_cents)}
+                      disabled={!editing}
                       onChange={(e) =>
                         setPromos((rows) =>
-                          rows.map((r) => (r.code === row.code ? { ...r, min_food_cents: toCents(e.target.value) } : r)),
+                          rows.map((r, i) => (i === idx ? { ...r, min_food_cents: toCents(e.target.value) } : r)),
                         )
                       }
                       className={inputClass}
@@ -854,24 +1181,42 @@ export function AdminClient() {
                     <input
                       type="checkbox"
                       checked={row.active}
+                      disabled={!editing}
                       onChange={(e) =>
                         setPromos((rows) =>
-                          rows.map((r) => (r.code === row.code ? { ...r, active: e.target.checked } : r)),
+                          rows.map((r, i) => (i === idx ? { ...r, active: e.target.checked } : r)),
                         )
                       }
                     />
                   </td>
                   <td className="py-2 whitespace-nowrap">
-                    <button type="button" onClick={() => savePromo(row)} className="text-berry hover:underline">
-                      {t("Save", "Guardar", lang)}
-                    </button>
+                    {editing ? (
+                      <button
+                        type="button"
+                        onClick={() => savePromo(row, false, editingPromoOriginal ?? row.code)}
+                        className="text-berry hover:underline"
+                      >
+                        {t("Save", "Guardar", lang)}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingPromoIdx(idx);
+                          setEditingPromoOriginal(row.code);
+                        }}
+                        className="text-berry hover:underline"
+                      >
+                        {t("Modify", "Modificar", lang)}
+                      </button>
+                    )}
                     {" · "}
                     <button type="button" onClick={() => deletePromo(row.code)} className="text-coal/50 hover:underline">
                       {t("Delete", "Borrar", lang)}
                     </button>
                   </td>
                 </tr>
-              ))}
+              );})}
             </tbody>
           </table>
         </div>
@@ -915,6 +1260,27 @@ export function AdminClient() {
       </section>
       )}
 
+      {tab === "pages" && (
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold">{t("Site pages", "Páginas del sitio", lang)}</h2>
+        <select
+          value={pageSlug}
+          onChange={(e) => setPageSlug(e.target.value as SitePageSlug)}
+          className={inputClass}
+        >
+          {SITE_PAGE_SLUGS.map((slug) => (
+            <option key={slug} value={slug}>
+              {sitePageTabLabel(slug, lang)}
+            </option>
+          ))}
+        </select>
+        <SitePageEditor slug={pageSlug} body={pageBody} lang={lang} onChange={setPageBody} />
+        <button type="button" onClick={() => void saveSitePage()} className="rounded-xl bg-berry px-4 py-2 text-sm font-medium text-white">
+          {t("Save page", "Guardar página", lang)}
+        </button>
+      </section>
+      )}
+
       {tab === "access" && (
       <section className="space-y-3 rounded-2xl bg-white p-4 shadow-sm">
         <h2 className="text-lg font-semibold">{t("Owner access", "Acceso de dueña", lang)}</h2>
@@ -939,6 +1305,262 @@ export function AdminClient() {
   );
 }
 
+function SitePageEditor({
+  slug,
+  body,
+  lang,
+  onChange,
+}: {
+  slug: SitePageSlug;
+  body: Record<string, unknown>;
+  lang: "en" | "es";
+  onChange: (next: Record<string, unknown>) => void;
+}) {
+  const set = (patch: Record<string, unknown>) => onChange({ ...body, ...patch });
+  const str = (key: string) => String(body[key] ?? "");
+  const [uploadMsg, setUploadMsg] = useState("");
+
+  if (slug === "about") {
+    return (
+      <div className="space-y-2 rounded-2xl bg-white p-4 shadow-sm">
+        <input
+          value={str("photo_url")}
+          onChange={(e) => {
+            setUploadMsg("");
+            set({ photo_url: e.target.value });
+          }}
+          placeholder="Photo URL"
+          className={inputClass}
+        />
+        <label className="flex flex-wrap items-center gap-3 text-sm text-coal/70">
+          <span className="shrink-0 font-medium text-berry">
+            {t("Or upload from this computer", "O sube desde esta computadora", lang)}
+          </span>
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            className="max-w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-blush/50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-coal"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (!file) return;
+              setUploadMsg("");
+              void uploadAdminImage(file)
+                .then((url) => set({ photo_url: url }))
+                .catch((err) =>
+                  setUploadMsg(err instanceof Error ? err.message : t("Upload failed", "No se pudo subir", lang)),
+                );
+            }}
+          />
+        </label>
+        {uploadMsg ? <p className="text-sm text-berry">{uploadMsg}</p> : null}
+        {str("photo_url") ? <img src={str("photo_url")} alt="" className="h-20 rounded-lg object-cover" /> : null}
+        <textarea
+          value={str("p1_en")}
+          onChange={(e) => set({ p1_en: e.target.value, p1_es: e.target.value })}
+          placeholder="Paragraph 1"
+          className={inputClass}
+          rows={3}
+        />
+        <textarea
+          value={str("p2_en")}
+          onChange={(e) => set({ p2_en: e.target.value, p2_es: e.target.value })}
+          placeholder="Paragraph 2"
+          className={inputClass}
+          rows={3}
+        />
+      </div>
+    );
+  }
+
+  if (slug === "faq") {
+    const items = (body.items as { qEn: string; qEs: string; aEn: string; aEs: string }[]) ?? [];
+    const setItems = (next: typeof items) => set({ items: next });
+    return (
+      <div className="space-y-3 rounded-2xl bg-white p-4 shadow-sm">
+        {items.map((item, i) => (
+          <div key={i} className="space-y-2 border-t border-blush/40 pt-3 first:border-0 first:pt-0">
+            <input
+              value={item.qEn}
+              onChange={(e) =>
+                setItems(items.map((x, j) => (j === i ? { ...x, qEn: e.target.value, qEs: e.target.value } : x)))
+              }
+              placeholder="Question"
+              className={inputClass}
+            />
+            <textarea
+              value={item.aEn}
+              onChange={(e) =>
+                setItems(items.map((x, j) => (j === i ? { ...x, aEn: e.target.value, aEs: e.target.value } : x)))
+              }
+              placeholder="Answer"
+              className={inputClass}
+              rows={2}
+            />
+            <button type="button" className="text-sm text-coal/50 hover:underline" onClick={() => setItems(items.filter((_, j) => j !== i))}>
+              {t("Remove", "Quitar", lang)}
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          className="text-sm text-berry hover:underline"
+          onClick={() => setItems([...items, { qEn: "", qEs: "", aEn: "", aEs: "" }])}
+        >
+          {t("Add FAQ", "Agregar pregunta", lang)}
+        </button>
+      </div>
+    );
+  }
+
+  if (slug === "stores") {
+    type StoreItem = Record<string, string>;
+    const items = (body.items as StoreItem[]) ?? [];
+    const setItems = (next: StoreItem[]) => set({ items: next });
+    const patch = (i: number, next: StoreItem) => setItems(items.map((x, j) => (j === i ? next : x)));
+    return (
+      <div className="space-y-3 rounded-2xl bg-white p-4 shadow-sm">
+        <textarea
+          value={str("intro_en")}
+          onChange={(e) => set({ intro_en: e.target.value, intro_es: e.target.value })}
+          placeholder={t("Intro", "Intro", lang)}
+          className={inputClass}
+          rows={2}
+        />
+        {items.map((item, i) => (
+          <div key={i} className="space-y-2 border-t border-blush/40 pt-3">
+            <input
+              value={item.nameEn ?? item.nameEs ?? ""}
+              onChange={(e) => patch(i, { ...item, nameEn: e.target.value, nameEs: e.target.value })}
+              placeholder={t("Store name", "Nombre de la tienda", lang)}
+              className={inputClass}
+            />
+            <input
+              value={item.addrEn ?? item.addrEs ?? ""}
+              onChange={(e) => patch(i, { ...item, addrEn: e.target.value, addrEs: e.target.value })}
+              placeholder={t("Address", "Dirección", lang)}
+              className={inputClass}
+            />
+            <input
+              value={item.noteEn ?? item.noteEs ?? ""}
+              onChange={(e) => patch(i, { ...item, noteEn: e.target.value, noteEs: e.target.value })}
+              placeholder={t("Note", "Nota", lang)}
+              className={inputClass}
+            />
+            <button type="button" className="text-sm text-coal/50 hover:underline" onClick={() => setItems(items.filter((_, j) => j !== i))}>
+              {t("Remove", "Quitar", lang)}
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          className="text-sm text-berry hover:underline"
+          onClick={() =>
+            setItems([...items, { nameEn: "", nameEs: "", addrEn: "", addrEs: "", noteEn: "", noteEs: "" }])
+          }
+        >
+          {t("Add store", "Agregar tienda", lang)}
+        </button>
+      </div>
+    );
+  }
+
+  if (slug === "events") {
+    type Item = Record<string, string>;
+    const items = (body.items as Item[]) ?? [];
+    const setItems = (next: Item[]) => set({ items: next });
+    const patch = (i: number, next: Item) => setItems(items.map((x, j) => (j === i ? next : x)));
+    return (
+      <div className="space-y-3 rounded-2xl bg-white p-4 shadow-sm">
+        <textarea
+          value={str("intro_en")}
+          onChange={(e) => set({ intro_en: e.target.value, intro_es: e.target.value })}
+          placeholder="Intro"
+          className={inputClass}
+          rows={2}
+        />
+        {items.map((item, i) => (
+          <div key={i} className="space-y-2 border-t border-blush/40 pt-3">
+            <input
+              value={item.nameEn ?? ""}
+              onChange={(e) => patch(i, { ...item, nameEn: e.target.value, nameEs: e.target.value })}
+              placeholder="Name"
+              className={inputClass}
+            />
+            <input
+              value={item.dateEn ?? ""}
+              onChange={(e) => patch(i, { ...item, dateEn: e.target.value, dateEs: e.target.value })}
+              placeholder="Date"
+              className={inputClass}
+            />
+            <input
+              value={item.locEn ?? ""}
+              onChange={(e) => patch(i, { ...item, locEn: e.target.value, locEs: e.target.value })}
+              placeholder="Location"
+              className={inputClass}
+            />
+            <button type="button" className="text-sm text-coal/50 hover:underline" onClick={() => setItems(items.filter((_, j) => j !== i))}>
+              {t("Remove", "Quitar", lang)}
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          className="text-sm text-berry hover:underline"
+          onClick={() =>
+            setItems([...items, { nameEn: "", nameEs: "", dateEn: "", dateEs: "", locEn: "", locEs: "" }])
+          }
+        >
+          {t("Add row", "Agregar fila", lang)}
+        </button>
+      </div>
+    );
+  }
+
+  if (slug === "wholesale" || slug === "contact") {
+    return (
+      <div className="space-y-2 rounded-2xl bg-white p-4 shadow-sm">
+        <textarea
+          value={str("intro_en")}
+          onChange={(e) => set({ intro_en: e.target.value, intro_es: e.target.value })}
+          placeholder="Intro"
+          className={inputClass}
+          rows={3}
+        />
+        <p className="text-xs text-coal/50">
+          {t("The inquiry form on this page stays as-is.", "El formulario de contacto en esta página no cambia.", lang)}
+        </p>
+      </div>
+    );
+  }
+
+  const hoursEn = (body.hours_en as string[]) ?? [];
+  return (
+    <div className="space-y-2 rounded-2xl bg-white p-4 shadow-sm">
+      <input value={str("street")} onChange={(e) => set({ street: e.target.value })} placeholder="Street" className={inputClass} />
+      <input value={str("cityLine")} onChange={(e) => set({ cityLine: e.target.value })} placeholder="City line" className={inputClass} />
+      <input value={str("country")} onChange={(e) => set({ country: e.target.value })} placeholder="Country" className={inputClass} />
+      <textarea
+        value={hoursEn.join("\n")}
+        onChange={(e) => {
+          const lines = e.target.value.split("\n");
+          set({ hours_en: lines, hours_es: lines });
+        }}
+        placeholder="Hours (one line each)"
+        className={inputClass}
+        rows={3}
+      />
+      <textarea
+        value={str("placeholder_en")}
+        onChange={(e) => set({ placeholder_en: e.target.value, placeholder_es: e.target.value })}
+        placeholder="Footer note"
+        className={inputClass}
+        rows={2}
+      />
+    </div>
+  );
+}
+
 function OfferForm({
   offer,
   categories,
@@ -955,6 +1577,22 @@ function OfferForm({
   onDelete?: () => void;
 }) {
   const set = (patch: Partial<OfferRow>) => onChange({ ...offer, ...patch });
+  const [uploading, setUploading] = useState(false);
+  const [uploadMsg, setUploadMsg] = useState("");
+
+  const pickFile = async (file: File | undefined) => {
+    if (!file) return;
+    setUploadMsg("");
+    setUploading(true);
+    try {
+      set({ image_url: await uploadAdminImage(file) });
+    } catch (err) {
+      setUploadMsg(err instanceof Error ? err.message : t("Upload failed", "No se pudo subir", lang));
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <div className="space-y-2 rounded-2xl bg-white p-4 shadow-sm">
       <div className="grid gap-2 sm:grid-cols-2">
@@ -962,7 +1600,34 @@ function OfferForm({
         <input value={offer.title_es} onChange={(e) => set({ title_es: e.target.value })} placeholder="Título (ES)" className={inputClass} />
         <input value={offer.offer_en} onChange={(e) => set({ offer_en: e.target.value })} placeholder="Offer (EN)" className={inputClass} />
         <input value={offer.offer_es} onChange={(e) => set({ offer_es: e.target.value })} placeholder="Oferta (ES)" className={inputClass} />
-        <input value={offer.image_url} onChange={(e) => set({ image_url: e.target.value })} placeholder="Image URL or /test-images/…" className={`${inputClass} sm:col-span-2`} />
+        <div className="space-y-2 sm:col-span-2">
+          <input
+            value={offer.image_url}
+            onChange={(e) => set({ image_url: e.target.value })}
+            placeholder="Image URL or /test-images/…"
+            className={inputClass}
+          />
+          <label className="flex flex-wrap items-center gap-3 text-sm text-coal/70">
+            <span className="shrink-0 font-medium text-berry">
+              {uploading ? t("Uploading…", "Subiendo…", lang) : t("Or upload from this computer", "O sube desde esta computadora", lang)}
+            </span>
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              disabled={uploading}
+              className="max-w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-blush/50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-coal"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                void pickFile(file);
+              }}
+            />
+          </label>
+          {uploadMsg && <p className="text-sm text-berry">{uploadMsg}</p>}
+          {offer.image_url ? (
+            <img src={offer.image_url} alt="" className="h-20 rounded-lg object-cover" />
+          ) : null}
+        </div>
         <input value={offer.tag_en ?? ""} onChange={(e) => set({ tag_en: e.target.value })} placeholder="Tag EN" className={inputClass} />
         <input value={offer.tag_es ?? ""} onChange={(e) => set({ tag_es: e.target.value })} placeholder="Tag ES" className={inputClass} />
         <input

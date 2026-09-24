@@ -66,8 +66,8 @@ export function customerOrderEmail(order: OrderEmailInput): { subject: string; t
       : `${es ? "Envío/entrega" : "Shipping"}: ${formatCad(order.shippingCents)}\n`;
   const addr = address(order);
   const text = es
-    ? `Hola ${order.customerName},\n\nRecibimos tu pedido #${order.id.slice(0, 8)}.\n\n${how}${addr ? `\n${addr}` : ""}\n\n${itemLines(order.items, "es")}\n\nComida: ${formatCad(order.foodCents)}\n${disc}${ship}Total: ${formatCad(order.totalCents)}\n\nVer pedido: ${order.siteUrl}/order-status/${order.id}\n\nSweetbites Toronto`
-    : `Hi ${order.customerName},\n\nWe got your order #${order.id.slice(0, 8)}.\n\n${how}${addr ? `\n${addr}` : ""}\n\n${itemLines(order.items, "en")}\n\nFood: ${formatCad(order.foodCents)}\n${disc}${ship}Total: ${formatCad(order.totalCents)}\n\nView order: ${order.siteUrl}/order-status/${order.id}\n\nSweetbites Toronto`;
+    ? `Hola ${order.customerName},\n\nRecibimos tu pedido #${order.id.slice(0, 8)}.\n\n${how}${addr ? `\n${addr}` : ""}\n\n${itemLines(order.items, "es")}\n\nComida: ${formatCad(order.foodCents)}\n${disc}${ship}Total: ${formatCad(order.totalCents)}\n\nVer pedido: ${order.siteUrl}/order-status/${order.id}\n\nSweetbites`
+    : `Hi ${order.customerName},\n\nWe got your order #${order.id.slice(0, 8)}.\n\n${how}${addr ? `\n${addr}` : ""}\n\n${itemLines(order.items, "en")}\n\nFood: ${formatCad(order.foodCents)}\n${disc}${ship}Total: ${formatCad(order.totalCents)}\n\nView order: ${order.siteUrl}/order-status/${order.id}\n\nSweetbites`;
   return { subject, text };
 }
 

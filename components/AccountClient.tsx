@@ -341,7 +341,7 @@ export function AccountClient() {
           <div>
             <h2 className="text-lg font-semibold text-coal">{t("Payment methods", "Métodos de pago", lang)}</h2>
             <p className="mt-4 text-sm text-coal/60">
-              {t("Saved cards will appear here when online payments go live.", "Las tarjetas guardadas aparecerán aquí cuando los pagos en línea estén activos.", lang)}
+              {t("Pay by card at checkout on Square. Saved cards are not stored here.", "Paga con tarjeta en Square al confirmar el pedido. Aquí no se guardan tarjetas.", lang)}
             </p>
           </div>
         )}

@@ -3,7 +3,10 @@ import { readFileSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 import type { CartLine, Fulfillment, Lang, OrderRecord } from "./types";
 import { getSupabase } from "./supabase";
+import { getSupabaseAdmin } from "./supabase-admin";
+import { getOriginPostal, resolveShipRate } from "./shipping";
 import { quotePromoCode } from "./promos";
+import { sendOrderEmails } from "./mail";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const LOCAL_FILE = join(process.cwd(), ".local-orders.json");
@@ -40,6 +43,7 @@ export type SubmitOrderInput = {
   serviceNameEn?: string;
   serviceNameEs?: string;
   promoCode?: string;
+  paymentStatus?: "paid" | "unpaid";
 };
 
 export type SubmitOrderResult = {
@@ -60,7 +64,19 @@ export async function submitOrder(
     (sum, item) => sum + item.unitPriceCents * item.qty,
     0,
   );
-  const shippingCents = Math.max(0, input.shippingCents);
+  let shippingCents = Math.max(0, input.shippingCents);
+  let serviceNameEn = input.serviceNameEn;
+  let serviceNameEs = input.serviceNameEs;
+  if (input.fulfillment === "ship") {
+    const quoted = await resolveShipRate({
+      destPostal: input.shipPostal,
+      serviceCode: input.serviceCode,
+      items: input.items,
+    });
+    shippingCents = quoted.rateCents;
+    serviceNameEn = quoted.nameEn;
+    serviceNameEs = quoted.nameEs;
+  }
   let discountCents = 0;
   let promoCode: string | null = null;
 
@@ -100,6 +116,7 @@ export async function submitOrder(
       discount_cents: discountCents,
       promo_code: promoCode,
       user_id: userId ?? null,
+      payment_status: input.paymentStatus ?? "paid",
     });
 
     if (orderError) {
@@ -128,10 +145,9 @@ export async function submitOrder(
         tracking_pin: null,
         label_url: null,
         raw_json: {
-          mock: true,
-          serviceNameEn: input.serviceNameEn,
-          serviceNameEs: input.serviceNameEs,
-          originPostal: "M5V 2T6",
+          serviceNameEn,
+          serviceNameEs,
+          originPostal: getOriginPostal(),
         },
       });
       if (shipError) throw new Error(shipError.message);
@@ -167,10 +183,11 @@ export async function submitOrder(
     totalCents,
     discountCents,
     promoCode: promoCode ?? undefined,
+    paymentStatus: input.paymentStatus ?? "paid",
     items: input.items,
     serviceCode: input.serviceCode,
-    serviceNameEn: input.serviceNameEn,
-    serviceNameEs: input.serviceNameEs,
+    serviceNameEn,
+    serviceNameEs,
   };
 
   const orders = readLocalOrders();
@@ -219,6 +236,7 @@ export async function getOrder(
     return {
       id: order.id,
       status: order.status,
+      paymentStatus: order.payment_status === "unpaid" ? "unpaid" : "paid",
       fulfillment: order.fulfillment,
       lang: order.lang,
       customerName: order.customer_name,
@@ -256,4 +274,71 @@ export async function getOrder(
 
 export function getLocalOrdersForCheck(): OrderRecord[] {
   return readLocalOrders();
+}
+
+export async function attachSquareOrder(orderId: string, squareOrderId: string) {
+  const admin = getSupabaseAdmin();
+  if (!admin) return;
+  await admin.from("orders").update({ square_order_id: squareOrderId }).eq("id", orderId);
+}
+
+export async function markOrderPaid(orderId: string, squarePaymentId?: string) {
+  const admin = getSupabaseAdmin();
+  if (!admin) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
+
+  const { data: order, error } = await admin.from("orders").select("*").eq("id", orderId).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!order) return { newlyPaid: false };
+
+  if (order.payment_status === "paid") return { newlyPaid: false };
+
+  const { error: updateError } = await admin
+    .from("orders")
+    .update({
+      payment_status: "paid",
+      square_payment_id: squarePaymentId ?? order.square_payment_id,
+    })
+    .eq("id", orderId);
+  if (updateError) throw new Error(updateError.message);
+
+  const { data: items } = await admin
+    .from("order_items")
+    .select("qty, unit_price_cents, options_json, product_id, name_en, name_es")
+    .eq("order_id", orderId);
+
+  try {
+    await sendOrderEmails({
+      id: order.id,
+      lang: order.lang,
+      fulfillment: order.fulfillment,
+      customerName: order.customer_name,
+      customerEmail: order.customer_email,
+      phone: order.phone,
+      shipStreet: order.ship_street,
+      shipCity: order.ship_city,
+      shipProvince: order.ship_province,
+      shipPostal: order.ship_postal,
+      notes: order.notes,
+      foodCents: order.food_cents,
+      shippingCents: order.shipping_cents,
+      discountCents: order.discount_cents ?? 0,
+      totalCents: order.total_cents,
+      promoCode: order.promo_code,
+      items: (items ?? []).map((item) => ({
+        lineId: item.product_id ?? "",
+        productId: item.product_id ?? "",
+        slug: "",
+        nameEn: item.name_en ?? "",
+        nameEs: item.name_es ?? "",
+        qty: item.qty,
+        unitPriceCents: item.unit_price_cents,
+        imageUrl: "",
+        optionsJson: (item.options_json ?? {}) as Record<string, string[]>,
+      })),
+    });
+  } catch (err) {
+    console.error("order email error", err);
+  }
+
+  return { newlyPaid: true };
 }
