@@ -7,6 +7,7 @@ import { getSupabaseAdmin } from "./supabase-admin";
 import { getOriginPostal, resolveShipRate } from "./shipping";
 import { quotePromoCode } from "./promos";
 import { sendOrderEmails } from "./mail";
+import { WANTED_ON_RE, wantedNote, wantedOnFromNotes } from "./shop";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const LOCAL_FILE = join(process.cwd(), ".local-orders.json");
@@ -35,6 +36,7 @@ export type SubmitOrderInput = {
   shipProvince?: string;
   shipPostal?: string;
   notes?: string;
+  wantedOn?: string;
   foodCents: number;
   shippingCents: number;
   totalCents: number;
@@ -60,6 +62,12 @@ export async function submitOrder(
   input: SubmitOrderInput,
   userId?: string | null,
 ): Promise<SubmitOrderResult> {
+  const fulfillment: Fulfillment = input.fulfillment === "delivery" ? "pickup" : input.fulfillment;
+  if (!WANTED_ON_RE.test(input.wantedOn ?? "")) {
+    throw new Error("Select a date");
+  }
+  const notes = wantedNote(fulfillment === "ship" ? "ship" : "pickup", input.wantedOn as string, input.notes, input.lang);
+
   const foodCents = input.items.reduce(
     (sum, item) => sum + item.unitPriceCents * item.qty,
     0,
@@ -67,7 +75,7 @@ export async function submitOrder(
   let shippingCents = Math.max(0, input.shippingCents);
   let serviceNameEn = input.serviceNameEn;
   let serviceNameEs = input.serviceNameEs;
-  if (input.fulfillment === "ship") {
+  if (fulfillment === "ship") {
     const quoted = await resolveShipRate({
       destPostal: input.shipPostal,
       serviceCode: input.serviceCode,
@@ -100,7 +108,7 @@ export async function submitOrder(
     const { error: orderError } = await supabase.from("orders").insert({
       id,
       status: "pending",
-      fulfillment: input.fulfillment,
+      fulfillment,
       lang: input.lang,
       customer_name: input.customerName,
       customer_email: input.customerEmail,
@@ -109,7 +117,7 @@ export async function submitOrder(
       ship_city: input.shipCity ?? null,
       ship_province: input.shipProvince ?? null,
       ship_postal: input.shipPostal ?? null,
-      notes: input.notes ?? null,
+      notes,
       food_cents: foodCents,
       shipping_cents: shippingCents,
       total_cents: totalCents,
@@ -136,7 +144,7 @@ export async function submitOrder(
     const { error: itemsError } = await supabase.from("order_items").insert(orderItems);
     if (itemsError) throw new Error(itemsError.message);
 
-    if (input.fulfillment === "ship" && input.serviceCode) {
+    if (fulfillment === "ship" && input.serviceCode) {
       const { error: shipError } = await supabase.from("shipments").insert({
         order_id: id,
         carrier: "canada_post",
@@ -168,7 +176,7 @@ export async function submitOrder(
   const record: OrderRecord = {
     id,
     status: "pending",
-    fulfillment: input.fulfillment,
+    fulfillment,
     lang: input.lang,
     customerName: input.customerName,
     customerEmail: input.customerEmail,
@@ -177,7 +185,8 @@ export async function submitOrder(
     shipCity: input.shipCity,
     shipProvince: input.shipProvince,
     shipPostal: input.shipPostal,
-    notes: input.notes,
+    notes,
+    wantedOn: input.wantedOn,
     foodCents,
     shippingCents,
     totalCents,
@@ -247,6 +256,7 @@ export async function getOrder(
       shipProvince: order.ship_province ?? undefined,
       shipPostal: order.ship_postal ?? undefined,
       notes: order.notes ?? undefined,
+      wantedOn: wantedOnFromNotes(order.notes),
       foodCents: order.food_cents,
       shippingCents: order.shipping_cents,
       totalCents: order.total_cents,
@@ -269,7 +279,9 @@ export async function getOrder(
     };
   }
 
-  return readLocalOrders().find((o) => o.id === id) ?? null;
+  const local = readLocalOrders().find((o) => o.id === id);
+  if (!local) return null;
+  return { ...local, wantedOn: local.wantedOn ?? wantedOnFromNotes(local.notes) };
 }
 
 export function getLocalOrdersForCheck(): OrderRecord[] {
@@ -307,7 +319,8 @@ export async function markOrderPaid(orderId: string, squarePaymentId?: string) {
     .eq("order_id", orderId);
 
   try {
-    await sendOrderEmails({
+    if (process.env.SQUARE_ENV === "production") {
+      await sendOrderEmails({
       id: order.id,
       lang: order.lang,
       fulfillment: order.fulfillment,
@@ -319,6 +332,7 @@ export async function markOrderPaid(orderId: string, squarePaymentId?: string) {
       shipProvince: order.ship_province,
       shipPostal: order.ship_postal,
       notes: order.notes,
+      wantedOn: wantedOnFromNotes(order.notes),
       foodCents: order.food_cents,
       shippingCents: order.shipping_cents,
       discountCents: order.discount_cents ?? 0,
@@ -336,6 +350,7 @@ export async function markOrderPaid(orderId: string, squarePaymentId?: string) {
         optionsJson: (item.options_json ?? {}) as Record<string, string[]>,
       })),
     });
+    }
   } catch (err) {
     console.error("order email error", err);
   }

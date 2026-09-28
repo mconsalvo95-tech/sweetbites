@@ -17,6 +17,47 @@ export const shop = {
     "https://www.google.com/maps/search/?api=1&query=195+Lougheed+Close,+Red+Deer,+AB+T4R+3G7",
 } as const;
 
+export function mapsSearchUrls(query: string) {
+  const q = query.trim();
+  if (!q) {
+    return { google: "https://www.google.com/maps", apple: "https://maps.apple.com" };
+  }
+  const enc = encodeURIComponent(q);
+  return {
+    google: `https://www.google.com/maps/search/?api=1&query=${enc}`,
+    apple: `https://maps.apple.com/?q=${enc}`,
+  };
+}
+
+export function localDateIso(d = new Date()) {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+export const WANTED_ON_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+export function wantedNote(
+  fulfillment: "pickup" | "ship",
+  wantedOn: string,
+  notes: string | undefined,
+  lang: Lang,
+) {
+  const line =
+    fulfillment === "ship"
+      ? t(`Ship date: ${wantedOn}`, `Fecha de envío: ${wantedOn}`, lang)
+      : t(`Pickup date: ${wantedOn}`, `Fecha de recogida: ${wantedOn}`, lang);
+  const extra = notes?.trim();
+  return extra ? `${line}\n${extra}` : line;
+}
+
+export function wantedOnFromNotes(notes?: string | null) {
+  const match = notes?.match(
+    /(?:Pickup date|Ship date|Fecha de recogida|Fecha de envío):\s*(\d{4}-\d{2}-\d{2})/i,
+  );
+  return match?.[1];
+}
+
 const DAY_NAMES: Record<number, { en: string; es: string }> = {
   0: { en: "Sunday", es: "Domingo" },
   1: { en: "Monday", es: "Lunes" },

@@ -87,6 +87,7 @@ export type OrderRecord = {
   shipProvince?: string;
   shipPostal?: string;
   notes?: string;
+  wantedOn?: string;
   foodCents: number;
   shippingCents: number;
   totalCents: number;

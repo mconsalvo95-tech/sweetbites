@@ -19,7 +19,7 @@ function fromAddress() {
   return `Sweetbites <${["onboarding", "resend.dev"].join("@")}>`;
 }
 
-async function sendResend(to: string, subject: string, text: string) {
+async function sendResend(to: string, subject: string, text: string, html?: string) {
   const key = process.env.RESEND_API_KEY;
   const from = fromAddress();
   if (!key) return false;
@@ -34,7 +34,7 @@ async function sendResend(to: string, subject: string, text: string) {
       to: [to],
       subject,
       text,
-      html: orderEmailHtml(text),
+      html: html ?? orderEmailHtml(text),
     }),
   });
   if (!res.ok) {
@@ -52,7 +52,7 @@ export async function sendOrderEmails(
   const owner = ownerOrderEmail(payload);
   const ownerTo = process.env.ORDER_NOTIFY_EMAIL?.trim();
   const results = await Promise.all([
-    sendResend(payload.customerEmail, customer.subject, customer.text),
+    sendResend(payload.customerEmail, customer.subject, customer.text, customer.html),
     ownerTo ? sendResend(ownerTo, owner.subject, owner.text) : Promise.resolve(false),
   ]);
   return results[0];

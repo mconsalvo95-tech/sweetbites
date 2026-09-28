@@ -14,14 +14,15 @@ import {
   pickName,
   t,
 } from "@/lib/format";
-import { LOCAL_DELIVERY_CENTS } from "@/lib/shop";
+import { localDateIso, WANTED_ON_RE } from "@/lib/shop";
+import { MapLinks, PickupHint } from "@/components/FulfillmentPicker";
 import type { Fulfillment, ShippingService } from "@/lib/types";
 
 const PROVINCES = [
   "AB", "BC", "MB", "NB", "NL", "NS", "NT", "NU", "ON", "PE", "QC", "SK", "YT",
 ];
 
-const FULFILLMENT_OPTIONS: Fulfillment[] = ["pickup", "delivery", "ship"];
+const FULFILLMENT_OPTIONS: Fulfillment[] = ["pickup", "ship"];
 
 export default function CartPage() {
   const { lang } = useLang();
@@ -45,6 +46,7 @@ export default function CartPage() {
   const [province, setProvince] = useState("AB");
   const [postal, setPostal] = useState("");
   const [notes, setNotes] = useState("");
+  const [wantedOn, setWantedOn] = useState(localDateIso);
   const [serviceCode, setServiceCode] = useState("");
   const [rates, setRates] = useState<ShippingService[]>([]);
   const [ratesSource, setRatesSource] = useState<"cpc" | "mock" | "">("");
@@ -60,7 +62,6 @@ export default function CartPage() {
 
   const shippingCents = useMemo(() => {
     if (fulfillment === "pickup") return 0;
-    if (fulfillment === "delivery") return LOCAL_DELIVERY_CENTS;
     return rates.find((r) => r.code === serviceCode)?.rateCents ?? 0;
   }, [fulfillment, rates, serviceCode]);
 
@@ -199,7 +200,6 @@ export default function CartPage() {
 
   const fulfillmentLabel = (f: Fulfillment) => {
     if (f === "pickup") return t("Pickup", "Recoger", lang);
-    if (f === "delivery") return t("Delivery", "Entrega", lang);
     return t("Ship", "Enviar", lang);
   };
 
@@ -213,11 +213,9 @@ export default function CartPage() {
       return;
     }
 
-    if (fulfillment === "delivery") {
-      if (!street.trim() || !city.trim()) {
-        setError(t("Complete your delivery address", "Completa tu dirección de entrega", lang));
-        return;
-      }
+    if (!WANTED_ON_RE.test(wantedOn)) {
+      setError(t("Pick a pickup or ship date", "Elige una fecha de recogida o envío", lang));
+      return;
     }
 
     if (fulfillment === "ship") {
@@ -237,7 +235,7 @@ export default function CartPage() {
 
     setSubmitting(true);
     try {
-      const needsAddress = fulfillment === "ship" || fulfillment === "delivery";
+      const needsAddress = fulfillment === "ship";
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -252,6 +250,7 @@ export default function CartPage() {
           shipProvince: fulfillment === "ship" ? province : undefined,
           shipPostal: fulfillment === "ship" ? normalizePostal(postal) : undefined,
           notes: notes.trim() || undefined,
+          wantedOn,
           foodCents: foodTotalCents,
           shippingCents,
           totalCents,
@@ -293,6 +292,8 @@ export default function CartPage() {
           discountCents,
           promoCode: applied?.code,
           items: lines,
+          notes: notes.trim() || undefined,
+          wantedOn,
           serviceCode: fulfillment === "ship" ? serviceCode : undefined,
           serviceNameEn: selectedService?.nameEn,
           serviceNameEs: selectedService?.nameEs,
@@ -336,8 +337,10 @@ export default function CartPage() {
       <div className="space-y-3">
         {lines.map((line) => (
           <div key={line.lineId} className="flex gap-3 rounded-[18px] bg-white p-3 shadow-sm">
-            <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl">
-              <Image src={line.imageUrl} alt="" fill unoptimized={line.imageUrl.startsWith("http")} className="object-cover" sizes="64px" />
+            <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-blush/30">
+              {line.imageUrl ? (
+                <Image src={line.imageUrl} alt="" fill unoptimized={line.imageUrl.startsWith("http")} className="object-cover" sizes="64px" />
+              ) : null}
             </div>
             <div className="min-w-0 flex-1">
               <p className="font-display font-semibold">{pickName(line, lang)}</p>
@@ -384,7 +387,7 @@ export default function CartPage() {
 
       <div className="rounded-[18px] bg-white p-4 shadow-sm">
         <h2 className="font-medium">{t("Fulfillment", "Entrega", lang)}</h2>
-        <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="mt-3 grid grid-cols-2 gap-2">
           {FULFILLMENT_OPTIONS.map((f) => (
             <button
               key={f}
@@ -400,6 +403,19 @@ export default function CartPage() {
             </button>
           ))}
         </div>
+        <label className="mt-4 block text-sm font-medium text-coal/80">
+          {fulfillment === "ship"
+            ? t("Ship date", "Fecha de envío", lang)
+            : t("Pickup date", "Fecha de recogida", lang)}
+          <input
+            type="date"
+            required
+            min={localDateIso()}
+            value={wantedOn}
+            onChange={(e) => setWantedOn(e.target.value)}
+            className="input-field mt-2"
+          />
+        </label>
       </div>
 
       <div className="space-y-3 rounded-[18px] bg-white p-4 shadow-sm">
@@ -437,70 +453,65 @@ export default function CartPage() {
         />
       </div>
 
-      {fulfillment === "delivery" && (
-        <div className="space-y-3 rounded-[18px] bg-white p-4 shadow-sm">
-          <h2 className="font-medium">{t("Deliver to (Red Deer area)", "Entregar en (área Red Deer)", lang)}</h2>
-          <input
-            required
-            value={street}
-            onChange={(e) => setStreet(e.target.value)}
-            placeholder={t("Street address", "Dirección", lang)}
+      <div className="space-y-3 rounded-[18px] bg-white p-4 shadow-sm">
+        <h2 className="font-medium">
+          {fulfillment === "ship"
+            ? t("Ship to (Canada)", "Enviar a (Canadá)", lang)
+            : t("Address", "Dirección", lang)}
+        </h2>
+        {fulfillment === "pickup" && <PickupHint />}
+        <p className="text-sm text-coal/70">
+          {t(
+            "Open Maps to look up an address, then type it here.",
+            "Abre Maps para buscar una dirección y luego escríbela aquí.",
+            lang,
+          )}
+        </p>
+        <MapLinks
+          query={[street, city, postal].some((part) => part.trim())
+            ? [street, city, province, postal].filter((part) => part.trim()).join(", ")
+            : ""}
+        />
+        <input
+          value={street}
+          onChange={(e) => setStreet(e.target.value)}
+          placeholder={t("Street address", "Dirección", lang)}
+          className="input-field"
+        />
+        <input
+          value={city}
+          onChange={(e) => setCity(e.target.value)}
+          placeholder={t("City", "Ciudad", lang)}
+          className="input-field"
+        />
+        <div className="grid grid-cols-2 gap-2">
+          <select
+            value={province}
+            onChange={(e) => setProvince(e.target.value)}
             className="input-field"
-          />
+          >
+            {PROVINCES.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
           <input
-            required
-            value={city}
-            onChange={(e) => setCity(e.target.value)}
-            placeholder={t("City", "Ciudad", lang)}
-            className="input-field"
+            value={postal}
+            onChange={(e) => {
+              setPostal(e.target.value.toUpperCase());
+              setPostalError("");
+            }}
+            placeholder="A1A 1A1"
+            className="input-field uppercase"
           />
-          <p className="text-xs text-coal/60">
-            {t("Flat delivery fee", "Tarifa fija de entrega", lang)}: {formatCad(LOCAL_DELIVERY_CENTS)}
-          </p>
         </div>
+        {postalError && <p className="text-sm text-red-600">{postalError}</p>}
+      </div>
+
+      {fulfillment === "ship" && ratesError && (
+        <p className="text-sm text-red-600">{ratesError}</p>
       )}
 
-      {fulfillment === "ship" && (
-        <>
-          <div className="space-y-3 rounded-[18px] bg-white p-4 shadow-sm">
-            <h2 className="font-medium">{t("Ship to (Canada)", "Enviar a (Canadá)", lang)}</h2>
-            <input
-              value={street}
-              onChange={(e) => setStreet(e.target.value)}
-              placeholder={t("Street address", "Dirección", lang)}
-              className="input-field"
-            />
-            <input
-              value={city}
-              onChange={(e) => setCity(e.target.value)}
-              placeholder={t("City", "Ciudad", lang)}
-              className="input-field"
-            />
-            <div className="grid grid-cols-2 gap-2">
-              <select
-                value={province}
-                onChange={(e) => setProvince(e.target.value)}
-                className="input-field"
-              >
-                {PROVINCES.map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-              <input
-                value={postal}
-                onChange={(e) => {
-                  setPostal(e.target.value.toUpperCase());
-                  setPostalError("");
-                }}
-                placeholder="A1A 1A1"
-                className="input-field uppercase"
-              />
-            </div>
-            {postalError && <p className="text-sm text-red-600">{postalError}</p>}
-          </div>
-
-          {ratesError && <p className="text-sm text-red-600">{ratesError}</p>}
-          {rates.length > 0 && (
+      {fulfillment === "ship" && rates.length > 0 && (
             <div className="space-y-2 rounded-[18px] bg-white p-4 shadow-sm">
               <h2 className="font-medium">
                 {ratesSource === "cpc"
@@ -537,8 +548,6 @@ export default function CartPage() {
                 </label>
               ))}
             </div>
-          )}
-        </>
       )}
 
       <div className="space-y-2 rounded-[18px] bg-white p-4 shadow-sm text-sm">
@@ -584,12 +593,10 @@ export default function CartPage() {
             <span>−{formatCad(discountCents)}</span>
           </div>
         )}
-        {(fulfillment === "ship" || fulfillment === "delivery") && (
+        {fulfillment === "ship" && (
           <div className="flex justify-between">
             <span>
-              {fulfillment === "delivery"
-                ? t("Delivery", "Entrega", lang)
-                : t("Shipping", "Envío", lang)}
+              {t("Shipping", "Envío", lang)}
             </span>
             <span>{formatCad(shippingCents)}</span>
           </div>

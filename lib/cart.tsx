@@ -39,7 +39,7 @@ function loadCart(): CartLine[] {
 
 function loadFulfillment(): Fulfillment {
   const raw = localStorage.getItem(FULFILLMENT_KEY);
-  if (raw === "ship" || raw === "delivery") return raw;
+  if (raw === "ship") return raw;
   return "pickup";
 }
 

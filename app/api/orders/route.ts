@@ -40,6 +40,34 @@ export async function POST(request: Request) {
       if (checkout.squareOrderId) {
         await attachSquareOrder(result.id, checkout.squareOrderId);
       }
+      const emailPayload = {
+        id: result.id,
+        lang: body.lang,
+        fulfillment: body.fulfillment === "delivery" ? "pickup" : body.fulfillment,
+        customerName: body.customerName.trim(),
+        customerEmail: body.customerEmail.trim().toLowerCase(),
+        phone: body.phone.trim(),
+        shipStreet: body.shipStreet,
+        shipCity: body.shipCity,
+        shipProvince: body.shipProvince,
+        shipPostal: body.shipPostal,
+        notes: body.notes,
+        wantedOn: body.wantedOn,
+        foodCents: result.foodCents,
+        shippingCents: result.shippingCents,
+        discountCents: result.discountCents,
+        totalCents: result.totalCents,
+        promoCode: result.promoCode,
+        items: body.items,
+      };
+      // ponytail: sandbox testing panel rarely returns to localhost; production still emails on paid
+      if (process.env.SQUARE_ENV !== "production") {
+        try {
+          await sendOrderEmails(emailPayload);
+        } catch (err) {
+          console.error("order email error", err);
+        }
+      }
       return NextResponse.json({ ...result, checkoutUrl: checkout.url });
     }
 
@@ -53,7 +81,7 @@ export async function POST(request: Request) {
       emailed = await sendOrderEmails({
         id: result.id,
         lang: body.lang,
-        fulfillment: body.fulfillment,
+        fulfillment: body.fulfillment === "delivery" ? "pickup" : body.fulfillment,
         customerName: body.customerName.trim(),
         customerEmail: body.customerEmail.trim().toLowerCase(),
         phone: body.phone.trim(),
@@ -62,6 +90,7 @@ export async function POST(request: Request) {
         shipProvince: body.shipProvince,
         shipPostal: body.shipPostal,
         notes: body.notes,
+        wantedOn: body.wantedOn,
         foodCents: result.foodCents,
         shippingCents: result.shippingCents,
         discountCents: result.discountCents,
@@ -78,7 +107,8 @@ export async function POST(request: Request) {
     const status =
       message === "Invalid promo code" ||
       message === "Promo minimum not met" ||
-      message === "Select a shipping option"
+      message === "Select a shipping option" ||
+      message === "Select a date"
         ? 400
         : 500;
     return NextResponse.json({ error: message }, { status });

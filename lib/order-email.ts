@@ -1,4 +1,5 @@
-import { formatCad, pickName } from "./format";
+import { formatCad, pickName, t } from "./format";
+import { shopAddressLine } from "./shop";
 import type { CartLine, Fulfillment, Lang } from "./types";
 
 export type OrderEmailInput = {
@@ -13,6 +14,7 @@ export type OrderEmailInput = {
   shipProvince?: string;
   shipPostal?: string;
   notes?: string;
+  wantedOn?: string;
   foodCents: number;
   shippingCents: number;
   discountCents: number;
@@ -46,11 +48,121 @@ function itemLines(items: CartLine[], lang: Lang) {
 }
 
 function address(order: OrderEmailInput) {
+  if (order.fulfillment === "pickup") return shopAddressLine();
   const parts = [order.shipStreet, order.shipCity, order.shipProvince, order.shipPostal].filter(Boolean);
   return parts.join(", ");
 }
 
-export function customerOrderEmail(order: OrderEmailInput): { subject: string; text: string } {
+function extraNotes(order: OrderEmailInput) {
+  return (
+    order.notes
+      ?.replace(
+        /^(?:Pickup date|Ship date|Fecha de recogida|Fecha de envío):\s*\d{4}-\d{2}-\d{2}\s*/i,
+        "",
+      )
+      .trim() ?? ""
+  );
+}
+
+function etaLine(order: OrderEmailInput) {
+  const when = order.wantedOn;
+  if (order.fulfillment === "ship") {
+    return when
+      ? t(`We'll ship on ${when}.`, `Lo enviamos el ${when}.`, order.lang)
+      : t("We'll ship this with Canada Post.", "Lo enviamos con Canada Post.", order.lang);
+  }
+  if (order.fulfillment === "delivery") {
+    return when
+      ? t(`We'll deliver on ${when}.`, `Lo entregamos el ${when}.`, order.lang)
+      : t("We'll deliver in the Red Deer area.", "Lo entregamos en el área de Red Deer.", order.lang);
+  }
+  return when
+    ? t(`Ready for pickup on ${when}.`, `Listo para recoger el ${when}.`, order.lang)
+    : t("We'll email when it's ready for pickup.", "Te avisamos cuando esté listo para recoger.", order.lang);
+}
+
+function cta(href: string, label: string, bg: string, color: string) {
+  return `<a href="${esc(href)}" style="display:inline-block;background:${bg};color:${color};text-decoration:none;font-weight:700;font-size:15px;padding:12px 22px;border-radius:999px">${esc(label)}</a>`;
+}
+
+export function customerReceiptHtml(order: OrderEmailInput) {
+  const lang = order.lang;
+  const statusUrl = `${order.siteUrl}/order-status/${order.id}`;
+  const contactUrl = `${order.siteUrl}/contact`;
+  const wordmark = `${order.siteUrl}/logos/receipt-wordmark.png`;
+  const mark = `${order.siteUrl}/logos/receipt-mark.png`;
+  const paper = `background-color:#fffaf8;background-image:linear-gradient(rgba(255,250,248,0.88),rgba(255,250,248,0.88)),url('${mark}');background-repeat:no-repeat;background-position:center;background-size:320px`;
+  const shortId = order.id.slice(0, 8);
+  const addr = address(order);
+  const notes = extraNotes(order);
+  const items = order.items
+    .map((item) => {
+      const opts = Object.entries(item.optionsJson)
+        .map(([k, v]) => `${k}: ${v.join(", ")}`)
+        .join("; ");
+      return `<tr>
+        <td style="padding:10px 12px;font-size:15px;color:#323335">
+          <div style="font-weight:600">${item.qty} ${esc(pickName(item, lang))}</div>
+          ${opts ? `<div style="margin-top:2px;font-size:12px">${esc(opts)}</div>` : ""}
+        </td>
+        <td style="padding:10px 12px;font-size:15px;color:#323335;text-align:right;white-space:nowrap">${formatCad(item.unitPriceCents * item.qty)}</td>
+      </tr>`;
+    })
+    .join("");
+  const money = (label: string, value: string, strong = false) =>
+    `<tr>
+      <td style="padding:6px 12px;font-size:15px;color:#323335${strong ? ";font-weight:700" : ""}">${esc(label)}</td>
+      <td style="padding:6px 12px;font-size:15px;color:#323335;text-align:right${strong ? ";font-weight:700" : ""}">${esc(value)}</td>
+    </tr>`;
+  const promo =
+    order.discountCents > 0
+      ? money(
+          `${t("Promo", "Promo", lang)}${order.promoCode ? `: ${order.promoCode}` : ""}`,
+          `−${formatCad(order.discountCents)}`,
+        )
+      : "";
+  const shipping =
+    order.fulfillment === "pickup"
+      ? ""
+      : money(t("Shipping", "Envío", lang), formatCad(order.shippingCents));
+
+  return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#fff">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;font-family:Georgia,serif;color:#323335">
+    <tr><td align="center" style="padding:24px 12px">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px">
+        <tr><td style="background:#e7aca7;border-radius:28px 28px 0 0;padding:28px 24px 32px;text-align:center">
+          <img src="${esc(wordmark)}" alt="Sweetbites" width="280" style="display:block;margin:0 auto 16px;width:280px;max-width:100%;height:auto;border:0">
+          <h1 style="margin:0 0 8px;font-size:28px;line-height:1.2">${esc(t("Thanks for your order!", "¡Gracias por tu pedido!", lang))}</h1>
+          <p style="margin:0 0 6px;font-size:16px">${esc(order.customerName)} · ${esc(order.phone)}</p>
+          <p style="margin:0 0 18px;font-size:16px">${esc(etaLine(order))}${addr ? `<br>${esc(addr)}` : ""}</p>
+          ${cta(statusUrl, t("Review order", "Ver pedido", lang), "#aa1d50", "#ffffff")}
+        </td></tr>
+        <tr><td style="${paper};padding:28px 20px 32px;text-align:center">
+          <p style="display:inline-block;margin:0 0 16px;border:2px solid #323335;border-radius:14px;padding:8px 16px;font-size:20px;font-weight:700">${esc(t("Order", "Pedido", lang))} #${esc(shortId)}</p>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:2px solid #323335;border-radius:16px;text-align:left">
+            ${items}
+            ${money(t("Food", "Comida", lang), formatCad(order.foodCents))}
+            ${shipping}
+            ${promo}
+            ${money(t("Order total", "Total del pedido", lang), formatCad(order.totalCents), true)}
+          </table>
+          ${notes ? `<p style="margin:16px 0 0;font-size:14px;text-align:left">${esc(t("Notes", "Notas", lang))}: ${esc(notes)}</p>` : ""}
+          <h2 style="margin:28px 0 8px;font-size:22px">${esc(t("Need to cancel?", "¿Necesitas cancelar?", lang))}</h2>
+          <p style="margin:0 0 16px;font-size:15px;line-height:1.4">${esc(t("Open your order to cancel while it's still pending.", "Abre tu pedido para cancelarlo mientras siga pendiente.", lang))}</p>
+          ${cta(statusUrl, t("Cancel order", "Cancelar pedido", lang), "#aa1d50", "#ffffff")}
+        </td></tr>
+        <tr><td style="background:#e7aca7;border-radius:0 0 28px 28px;padding:28px 24px 32px;text-align:center">
+          <h2 style="margin:0 0 8px;font-size:22px">${esc(t("Contact us", "Contáctanos", lang))}</h2>
+          <p style="margin:0 0 16px;font-size:15px;line-height:1.4">${esc(t("Questions about this order? We're here.", "¿Preguntas sobre este pedido? Estamos aquí.", lang))}</p>
+          ${cta(contactUrl, t("Contact us", "Contáctanos", lang), "#ffffff", "#323335")}
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+}
+
+export function customerOrderEmail(order: OrderEmailInput): { subject: string; text: string; html: string } {
   const es = order.lang === "es";
   const subject = es
     ? `Sweetbites — pedido #${order.id.slice(0, 8)}`
@@ -65,22 +177,40 @@ export function customerOrderEmail(order: OrderEmailInput): { subject: string; t
       ? ""
       : `${es ? "Envío/entrega" : "Shipping"}: ${formatCad(order.shippingCents)}\n`;
   const addr = address(order);
+  const when = order.wantedOn
+    ? es
+      ? order.fulfillment === "ship"
+        ? `\nFecha de envío: ${order.wantedOn}`
+        : `\nFecha de recogida: ${order.wantedOn}`
+      : order.fulfillment === "ship"
+        ? `\nShip date: ${order.wantedOn}`
+        : `\nPickup date: ${order.wantedOn}`
+    : "";
   const text = es
-    ? `Hola ${order.customerName},\n\nRecibimos tu pedido #${order.id.slice(0, 8)}.\n\n${how}${addr ? `\n${addr}` : ""}\n\n${itemLines(order.items, "es")}\n\nComida: ${formatCad(order.foodCents)}\n${disc}${ship}Total: ${formatCad(order.totalCents)}\n\nVer pedido: ${order.siteUrl}/order-status/${order.id}\n\nSweetbites`
-    : `Hi ${order.customerName},\n\nWe got your order #${order.id.slice(0, 8)}.\n\n${how}${addr ? `\n${addr}` : ""}\n\n${itemLines(order.items, "en")}\n\nFood: ${formatCad(order.foodCents)}\n${disc}${ship}Total: ${formatCad(order.totalCents)}\n\nView order: ${order.siteUrl}/order-status/${order.id}\n\nSweetbites`;
-  return { subject, text };
+    ? `Hola ${order.customerName},\n\nRecibimos tu pedido #${order.id.slice(0, 8)}.\n\n${how}${when}${addr ? `\n${addr}` : ""}\n\n${itemLines(order.items, "es")}\n\nComida: ${formatCad(order.foodCents)}\n${disc}${ship}Total: ${formatCad(order.totalCents)}\n\nVer pedido: ${order.siteUrl}/order-status/${order.id}\n\nSweetbites`
+    : `Hi ${order.customerName},\n\nWe got your order #${order.id.slice(0, 8)}.\n\n${how}${when}${addr ? `\n${addr}` : ""}\n\n${itemLines(order.items, "en")}\n\nFood: ${formatCad(order.foodCents)}\n${disc}${ship}Total: ${formatCad(order.totalCents)}\n\nView order: ${order.siteUrl}/order-status/${order.id}\n\nSweetbites`;
+  return { subject, text, html: customerReceiptHtml(order) };
 }
 
 export function ownerOrderEmail(order: OrderEmailInput): { subject: string; text: string } {
   const subject = `New order #${order.id.slice(0, 8)} — ${formatCad(order.totalCents)}`;
   const addr = address(order);
-  const notes = order.notes?.trim() ? `\nNotes: ${order.notes.trim()}\n` : "";
+  const when = order.wantedOn
+    ? order.fulfillment === "ship"
+      ? `\nShip date: ${order.wantedOn}`
+      : `\nPickup date: ${order.wantedOn}`
+    : "";
+  const notesRaw = order.notes?.replace(
+    /^(?:Pickup date|Ship date|Fecha de recogida|Fecha de envío):\s*\d{4}-\d{2}-\d{2}\s*/i,
+    "",
+  ).trim();
+  const notes = notesRaw ? `\nNotes: ${notesRaw}\n` : "";
   const disc =
     order.discountCents > 0
       ? `Promo${order.promoCode ? ` (${order.promoCode})` : ""}: −${formatCad(order.discountCents)}\n`
       : "";
   const ship = order.fulfillment === "pickup" ? "" : `Shipping: ${formatCad(order.shippingCents)}\n`;
-  const text = `New Sweetbites order\n\n#${order.id}\n${fulfillmentLabel(order.fulfillment, "en")}${addr ? `\n${addr}` : ""}\n\n${order.customerName}\n${order.customerEmail}\n${order.phone}\n${notes}\n${itemLines(order.items, "en")}\n\nFood: ${formatCad(order.foodCents)}\n${disc}${ship}Total: ${formatCad(order.totalCents)}\n\nOpen: ${order.siteUrl}/order-status/${order.id}`;
+  const text = `New Sweetbites order\n\n#${order.id}\n${fulfillmentLabel(order.fulfillment, "en")}${when}${addr ? `\n${addr}` : ""}\n\n${order.customerName}\n${order.customerEmail}\n${order.phone}\n${notes}\n${itemLines(order.items, "en")}\n\nFood: ${formatCad(order.foodCents)}\n${disc}${ship}Total: ${formatCad(order.totalCents)}\n\nOpen: ${order.siteUrl}/order-status/${order.id}`;
   return { subject, text };
 }
 

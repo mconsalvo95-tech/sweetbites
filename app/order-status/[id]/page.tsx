@@ -24,6 +24,8 @@ type OrderView = {
   discountCents?: number;
   promoCode?: string;
   items: CartLine[];
+  notes?: string;
+  wantedOn?: string;
   serviceCode?: string;
   serviceNameEn?: string;
   serviceNameEs?: string;
@@ -205,6 +207,16 @@ export default function OrderStatusPage() {
             <span className="text-berry">{formatCad(order.totalCents)}</span>
           </div>
         </div>
+        {order.wantedOn && (
+          <p className="pt-2 text-sm text-coal/70">
+            {order.fulfillment === "ship"
+              ? t(`Ship date: ${order.wantedOn}`, `Fecha de envío: ${order.wantedOn}`, lang)
+              : t(`Pickup date: ${order.wantedOn}`, `Fecha de recogida: ${order.wantedOn}`, lang)}
+          </p>
+        )}
+        {order.notes && !order.wantedOn && (
+          <p className="pt-2 text-sm text-coal/70">{order.notes}</p>
+        )}
       </div>
 
       {!cancelled && !unpaid && (
