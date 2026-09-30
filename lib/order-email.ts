@@ -147,9 +147,9 @@ export function customerReceiptHtml(order: OrderEmailInput) {
             ${money(t("Order total", "Total del pedido", lang), formatCad(order.totalCents), true)}
           </table>
           ${notes ? `<p style="margin:16px 0 0;font-size:14px;text-align:left">${esc(t("Notes", "Notas", lang))}: ${esc(notes)}</p>` : ""}
-          <h2 style="margin:28px 0 8px;font-size:22px">${esc(t("Need to cancel?", "¿Necesitas cancelar?", lang))}</h2>
-          <p style="margin:0 0 16px;font-size:15px;line-height:1.4">${esc(t("Open your order to cancel while it's still pending.", "Abre tu pedido para cancelarlo mientras siga pendiente.", lang))}</p>
-          ${cta(statusUrl, t("Cancel order", "Cancelar pedido", lang), "#aa1d50", "#ffffff")}
+          <h2 style="margin:28px 0 8px;font-size:22px">${esc(t("Need to change order date?", "¿Necesitas cambiar la fecha del pedido?", lang))}</h2>
+          <p style="margin:0 0 16px;font-size:15px;line-height:1.4">${esc(t("Cancellations are not available. Contact us as soon as possible to reschedule your pickup or delivery (subject to availability).", "No se puede cancelar. Contáctanos lo antes posible para reprogramar la recogida o la entrega (según disponibilidad).", lang))}</p>
+          ${cta(contactUrl, t("Need to change order date?", "¿Necesitas cambiar la fecha del pedido?", lang), "#aa1d50", "#ffffff")}
         </td></tr>
         <tr><td style="background:#e7aca7;border-radius:0 0 28px 28px;padding:28px 24px 32px;text-align:center">
           <h2 style="margin:0 0 8px;font-size:22px">${esc(t("Contact us", "Contáctanos", lang))}</h2>

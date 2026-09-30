@@ -88,6 +88,8 @@ async function main() {
   );
   assert(buyer.text.includes("Pickup date: 2026-10-02"), "pickup confirmation should include requested date");
   assert(buyer.html.includes("Review order") && buyer.html.includes("Order #aaaaaaaa"), "receipt should have order number and review button");
+  assert(buyer.html.includes("Need to change order date?"), "receipt should offer a date change instead of cancel");
+  assert(!buyer.html.includes("Cancel order"), "receipt should not offer cancellation");
   assert(buyer.html.includes("/logos/receipt-wordmark.png"), "receipt header should use the wordmark");
   assert(buyer.html.includes("/logos/receipt-mark.png"), "receipt background should use the coal badge");
   assert(buyer.html.includes("Maya") && buyer.html.includes("$6.30"), "receipt should use this customer's total");

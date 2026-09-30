@@ -607,6 +607,24 @@ export default function CartPage() {
         </div>
       </div>
 
+      <div className="rounded-[18px] bg-blush/25 p-4 text-sm text-coal/80">
+        <p className="font-semibold text-coal">{t("Please note", "Ten en cuenta", lang)}</p>
+        <p className="mt-2">
+          {t(
+            "Once an order has been placed, cancellations are not available. However, if you need to change your order date, we’re happy to help you reschedule your pickup or delivery (subject to availability).",
+            "Una vez realizado el pedido, no se puede cancelar. Si necesitas cambiar la fecha, con gusto te ayudamos a reprogramar la recogida o la entrega (según disponibilidad).",
+            lang,
+          )}
+        </p>
+        <p className="mt-2">
+          {t(
+            "Please contact us directly as soon as possible to make any changes.",
+            "Contáctanos directamente lo antes posible para hacer cualquier cambio.",
+            lang,
+          )}
+        </p>
+      </div>
+
       {error && <p className="text-sm text-red-600">{error}</p>}
       {canceled && (
         <p className="text-sm text-coal/70">
