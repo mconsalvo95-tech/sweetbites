@@ -5,44 +5,8 @@ import Link from "next/link";
 import { useLang } from "@/lib/lang";
 import { useCart } from "@/lib/cart";
 import { t } from "@/lib/format";
-import { mapsSearchUrls } from "@/lib/shop";
 
 import type { Fulfillment } from "@/lib/types";
-
-function PinIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
-      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
-    </svg>
-  );
-}
-
-export function MapLinks({ query }: { query: string }) {
-  const { lang } = useLang();
-  const urls = mapsSearchUrls(query);
-  return (
-    <div className="flex flex-wrap gap-2">
-      <a
-        href={urls.google}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex items-center gap-1.5 rounded-full bg-blush/40 px-3 py-1.5 text-xs font-medium text-coal hover:bg-blush/60"
-      >
-        <PinIcon />
-        Google Maps
-      </a>
-      <a
-        href={urls.apple}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex items-center gap-1.5 rounded-full bg-blush/40 px-3 py-1.5 text-xs font-medium text-coal hover:bg-blush/60"
-      >
-        <PinIcon />
-        {t("Apple Maps", "Apple Maps", lang)}
-      </a>
-    </div>
-  );
-}
 
 export function PickupHint() {
   const { lang } = useLang();

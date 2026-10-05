@@ -17,18 +17,6 @@ export const shop = {
     "https://www.google.com/maps/search/?api=1&query=195+Lougheed+Close,+Red+Deer,+AB+T4R+3G7",
 } as const;
 
-export function mapsSearchUrls(query: string) {
-  const q = query.trim();
-  if (!q) {
-    return { google: "https://www.google.com/maps", apple: "https://maps.apple.com" };
-  }
-  const enc = encodeURIComponent(q);
-  return {
-    google: `https://www.google.com/maps/search/?api=1&query=${enc}`,
-    apple: `https://maps.apple.com/?q=${enc}`,
-  };
-}
-
 export function localDateIso(d = new Date()) {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");

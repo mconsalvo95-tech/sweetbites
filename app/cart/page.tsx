@@ -15,8 +15,9 @@ import {
   t,
 } from "@/lib/format";
 import { isAllowedWantedOn, minWantedOnIso, WANTED_ON_RE } from "@/lib/shop";
+import { searchCanadianAddresses, type AddressHit } from "@/lib/address-search";
 import { primaryProductImage } from "@/lib/product-images";
-import { MapLinks, PickupHint } from "@/components/FulfillmentPicker";
+import { PickupHint } from "@/components/FulfillmentPicker";
 import type { Fulfillment, ShippingService } from "@/lib/types";
 
 const PROVINCES = [
@@ -54,11 +55,13 @@ export default function CartPage() {
     province: false,
     postal: false,
   });
+  const pickedStreet = useRef("");
   const [serviceCode, setServiceCode] = useState("");
   const [rates, setRates] = useState<ShippingService[]>([]);
   const [ratesSource, setRatesSource] = useState<"cpc" | "mock" | "">("");
   const [ratesError, setRatesError] = useState("");
   const [postalError, setPostalError] = useState("");
+  const [addressHits, setAddressHits] = useState<AddressHit[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [promoInput, setPromoInput] = useState("");
@@ -101,6 +104,41 @@ export default function CartPage() {
       setPostal((v) => v || profile.address_postal || "");
     }
   }, [fulfillment, profile]);
+
+  useEffect(() => {
+    if (fulfillment !== "ship" || street.trim().length < 3 || street === pickedStreet.current) {
+      setAddressHits([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      searchCanadianAddresses(street)
+        .then((hits) => {
+          if (!cancelled) setAddressHits(hits);
+        })
+        .catch(() => {
+          if (!cancelled) setAddressHits([]);
+        });
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [street, fulfillment]);
+
+  const applyAddress = (hit: AddressHit) => {
+    pickedStreet.current = hit.street;
+    shipAddressTouched.current.street = true;
+    shipAddressTouched.current.city = true;
+    shipAddressTouched.current.province = true;
+    shipAddressTouched.current.postal = true;
+    setStreet(hit.street);
+    setCity(hit.city);
+    if (hit.province) setProvince(hit.province);
+    setPostal(hit.postal);
+    setPostalError("");
+    setAddressHits([]);
+  };
 
   useEffect(() => {
     if (fulfillment !== "ship") {
@@ -509,25 +547,39 @@ export default function CartPage() {
           <h2 className="font-medium">{t("Ship in Canada", "Enviar en Canadá", lang)}</h2>
           <p className="text-sm text-coal/70">
             {t(
-              "Open Maps to look up an address, then type it here.",
-              "Abre Maps para buscar una dirección y luego escríbela aquí.",
-            lang,
+              "Start typing a Canadian address and pick a match, or type it yourself.",
+              "Empieza a escribir una dirección de Canadá y elige una opción, o escríbela tú.",
+              lang,
             )}
           </p>
-          <MapLinks
-            query={[street, city, postal].some((part) => part.trim())
-              ? [street, city, province, postal].filter((part) => part.trim()).join(", ")
-              : ""}
-          />
-          <input
-            value={street}
-            onChange={(e) => {
-              shipAddressTouched.current.street = true;
-              setStreet(e.target.value);
-            }}
-            placeholder={t("Street address", "Dirección", lang)}
-            className="input-field"
-          />
+          <div className="relative">
+            <input
+              value={street}
+              onChange={(e) => {
+                shipAddressTouched.current.street = true;
+                setStreet(e.target.value);
+              }}
+              placeholder={t("Street address", "Dirección", lang)}
+              className="input-field"
+              autoComplete="off"
+            />
+            {addressHits.length > 0 && (
+              <ul className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-xl border border-blush/50 bg-white shadow-md">
+                {addressHits.map((hit) => (
+                  <li key={hit.label}>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => applyAddress(hit)}
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-blush/30"
+                    >
+                      {hit.label}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
           <input
             value={city}
             onChange={(e) => {

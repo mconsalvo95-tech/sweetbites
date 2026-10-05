@@ -15,6 +15,7 @@ import {
   primaryProductImage,
   serializeProductImages,
 } from "../lib/product-images";
+import { addressFromPhoton, provinceCode } from "../lib/address-search";
 import { isAllowedWantedOn, localDateIso, minWantedOnIso, wantedNote, wantedOnFromNotes } from "../lib/shop";
 
 const LOCAL_FILE = join(process.cwd(), ".local-orders.json");
@@ -34,6 +35,23 @@ async function main() {
   assert(!isAllowedWantedOn("2026-10-02", fixedToday), "next-day order date should fail");
   assert(isAllowedWantedOn("2026-10-03", fixedToday), "earliest allowed date should pass");
   assert(!isAllowedWantedOn("soon", fixedToday), "non-ISO date string should fail");
+
+  assert(provinceCode("Alberta") === "AB", "Alberta should map to AB");
+  assert(provinceCode("Québec") === "QC", "Québec should map to QC");
+  const redDeer = addressFromPhoton({
+    housenumber: "12",
+    street: "Gaetz Ave",
+    city: "Red Deer",
+    state: "Alberta",
+    postcode: "T4N 3P2",
+    countrycode: "CA",
+  });
+  assert(
+    redDeer?.street === "12 Gaetz Ave" && redDeer.city === "Red Deer" && redDeer.province === "AB" && redDeer.postal === "T4N 3P2",
+    "Photon hit should fill street, city, province, and postal",
+  );
+  assert(addressFromPhoton({ street: "Main", city: "Seattle", state: "Washington", countrycode: "US" }) === null, "non-Canada hit should be dropped");
+  assert(addressFromPhoton({ name: "Red Deer", city: "Red Deer", state: "Alberta", countrycode: "CA", type: "city" }) === null, "city-only hit should be dropped");
 
   const plainImg = "https://a.test/1.jpg";
   assert(
