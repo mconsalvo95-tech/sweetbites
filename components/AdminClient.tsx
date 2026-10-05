@@ -181,6 +181,67 @@ function orderDoneCheckboxLabel(row: OrderRow, lang: "en" | "es") {
     : t("Mark picked up", "Marcar recogido", lang);
 }
 
+function orderRowActions(
+  row: OrderRow,
+  lang: "en" | "es",
+  save: (id: string, status: string) => void,
+) {
+  if (row.status === "pending") {
+    return (
+      <button
+        type="button"
+        onClick={() => void save(row.id, "cancelled")}
+        className="text-coal/50 hover:underline"
+      >
+        {t("Cancel", "Cancelar", lang)}
+      </button>
+    );
+  }
+  if (isMidFulfillmentStatus(row.status)) {
+    return (
+      <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
+        <button
+          type="button"
+          onClick={() => void save(row.id, "done")}
+          className="font-medium text-berry hover:underline"
+        >
+          {t("Done", "Listo", lang)}
+        </button>
+        <button
+          type="button"
+          onClick={() => void save(row.id, "pending")}
+          className="text-coal/50 hover:text-berry hover:underline"
+        >
+          {t("Back to pending", "Volver a pendiente", lang)}
+        </button>
+      </span>
+    );
+  }
+  if (row.status === "done") {
+    return (
+      <button
+        type="button"
+        onClick={() => void save(row.id, reopenStatusFor(row.fulfillment))}
+        className="text-coal/50 hover:underline"
+      >
+        {t("Reopen", "Reabrir", lang)}
+      </button>
+    );
+  }
+  if (row.status === "cancelled") {
+    return (
+      <button
+        type="button"
+        onClick={() => void save(row.id, "pending")}
+        className="text-coal/50 hover:underline"
+      >
+        {t("Restore", "Restaurar", lang)}
+      </button>
+    );
+  }
+  return null;
+}
+
 function normalizeReviewRow(row: ReviewItem): ReviewItem {
   const quote_en = row.quote_en.trim();
   const city_en = row.city_en.trim();
@@ -910,7 +971,7 @@ export function AdminClient() {
                   setOrderFilter(s);
                   setEraseArmed(false);
                 }}
-                className={`rounded-full px-3 py-1.5 text-sm font-medium ${
+                className={`shrink-0 rounded-full px-3 py-1.5 text-sm font-medium ${
                   orderFilter === s ? "bg-coal text-white" : "bg-white text-coal/70 shadow-sm hover:bg-blush/40"
                 }`}
               >
@@ -970,7 +1031,7 @@ export function AdminClient() {
           </p>
         ) : (
           <div className="overflow-x-auto rounded-2xl bg-white p-4 shadow-sm">
-            <table className="w-full min-w-[720px] text-left text-sm">
+            <table className="w-full min-w-0 text-left text-sm md:min-w-[720px]">
               <thead>
                 <tr className="text-coal/60">
                   <th className="pb-2 pr-2 w-8">
@@ -996,9 +1057,9 @@ export function AdminClient() {
                   <th className="pb-2 pr-2">{t("Customer", "Cliente", lang)}</th>
                   <th className="pb-2 pr-2">{t("Items", "Artículos", lang)}</th>
                   <th className="pb-2 pr-2">{t("Total", "Total", lang)}</th>
-                  <th className="pb-2 pr-2">{t("Type", "Tipo", lang)}</th>
-                  <th className="pb-2 pr-2">{t("Date", "Fecha", lang)}</th>
-                  <th className="pb-2" />
+                  <th className="hidden pb-2 pr-2 md:table-cell">{t("Type", "Tipo", lang)}</th>
+                  <th className="hidden pb-2 pr-2 md:table-cell">{t("Date", "Fecha", lang)}</th>
+                  <th className="hidden pb-2 md:table-cell" />
                 </tr>
               </thead>
               <tbody>
@@ -1027,17 +1088,22 @@ export function AdminClient() {
                             }}
                           />
                         </td>
-                        <td className="py-2 pr-2 whitespace-nowrap">
-                          <button
-                            type="button"
-                            onClick={() => setOpenOrderId(open ? null : row.id)}
-                            className="font-medium text-berry hover:underline"
-                          >
-                            #{row.id.slice(0, 8)}
-                          </button>
-                          {row.payment_status === "unpaid" ? (
-                            <span className="ml-2 text-berry">{t("Unpaid", "Sin pagar", lang)}</span>
-                          ) : null}
+                        <td className="py-2 pr-2">
+                          <div className="whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => setOpenOrderId(open ? null : row.id)}
+                              className="font-medium text-berry hover:underline"
+                            >
+                              #{row.id.slice(0, 8)}
+                            </button>
+                            {row.payment_status === "unpaid" ? (
+                              <span className="ml-2 text-berry">{t("Unpaid", "Sin pagar", lang)}</span>
+                            ) : null}
+                          </div>
+                          <div className="mt-1 md:hidden">
+                            {orderRowActions(row, lang, (id, status) => void saveOrderStatus(id, status))}
+                          </div>
                         </td>
                         <td className="py-2 pr-2">{row.customer_name}</td>
                         <td className="py-2 pr-2 max-w-[220px] truncate" title={orderItemSummary(row, lang)}>
@@ -1046,55 +1112,12 @@ export function AdminClient() {
                         <td className="py-2 pr-2 whitespace-nowrap font-medium text-berry">
                           {formatCad(row.total_cents)}
                         </td>
-                        <td className="py-2 pr-2">{fulfillmentLabel(row.fulfillment, lang)}</td>
-                        <td className="py-2 pr-2 whitespace-nowrap text-coal/60">
+                        <td className="hidden py-2 pr-2 md:table-cell">{fulfillmentLabel(row.fulfillment, lang)}</td>
+                        <td className="hidden py-2 pr-2 whitespace-nowrap text-coal/60 md:table-cell">
                           {new Date(row.created_at).toLocaleString()}
                         </td>
-                        <td className="py-2 whitespace-nowrap">
-                          {row.status === "pending" ? (
-                            <button
-                              type="button"
-                              onClick={() => void saveOrderStatus(row.id, "cancelled")}
-                              className="text-coal/50 hover:underline"
-                            >
-                              {t("Cancel", "Cancelar", lang)}
-                            </button>
-                          ) : isMidFulfillmentStatus(row.status) ? (
-                            <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
-                              <button
-                                type="button"
-                                onClick={() => void saveOrderStatus(row.id, "done")}
-                                className="font-medium text-berry hover:underline"
-                              >
-                                {t("Done", "Listo", lang)}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void saveOrderStatus(row.id, "pending")}
-                                className="text-coal/50 hover:text-berry hover:underline"
-                              >
-                                {t("Back to pending", "Volver a pendiente", lang)}
-                              </button>
-                            </span>
-                          ) : row.status === "done" ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void saveOrderStatus(row.id, reopenStatusFor(row.fulfillment))
-                              }
-                              className="text-coal/50 hover:underline"
-                            >
-                              {t("Reopen", "Reabrir", lang)}
-                            </button>
-                          ) : row.status === "cancelled" ? (
-                            <button
-                              type="button"
-                              onClick={() => void saveOrderStatus(row.id, "pending")}
-                              className="text-coal/50 hover:underline"
-                            >
-                              {t("Restore", "Restaurar", lang)}
-                            </button>
-                          ) : null}
+                        <td className="hidden py-2 whitespace-nowrap md:table-cell">
+                          {orderRowActions(row, lang, (id, status) => void saveOrderStatus(id, status))}
                         </td>
                       </tr>
                       {open && (
