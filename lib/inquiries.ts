@@ -18,6 +18,7 @@ export type InquiryRecord = {
   business?: string;
   city?: string;
   message?: string;
+  orderNumber?: string;
   createdAt: string;
 };
 
@@ -30,6 +31,7 @@ export type SubmitInquiryInput = {
   business?: string;
   city?: string;
   message?: string;
+  orderNumber?: string;
 };
 
 function readLocal(): InquiryRecord[] {
@@ -60,6 +62,9 @@ export async function submitInquiry(input: SubmitInquiryInput): Promise<{ id: st
         business: input.business ?? null,
         city: input.city ?? null,
         message: input.message ?? null,
+        ...(typeof input.orderNumber === "string" && input.orderNumber !== ""
+          ? { order_number: input.orderNumber }
+          : {}),
       })
       .select("id")
       .single();
@@ -80,6 +85,7 @@ export async function submitInquiry(input: SubmitInquiryInput): Promise<{ id: st
     business: input.business,
     city: input.city,
     message: input.message,
+    orderNumber: input.orderNumber,
     createdAt: new Date().toISOString(),
   };
   const records = readLocal();

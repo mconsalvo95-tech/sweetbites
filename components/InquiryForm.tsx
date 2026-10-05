@@ -14,6 +14,7 @@ export function InquiryForm({ type, compact }: Props) {
   const { lang } = useLang();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [orderNumber, setOrderNumber] = useState("");
   const [phone, setPhone] = useState("");
   const [business, setBusiness] = useState("");
   const [city, setCity] = useState("");
@@ -35,6 +36,8 @@ export function InquiryForm({ type, compact }: Props) {
           lang,
           email,
           name: type === "contact" ? name : undefined,
+          orderNumber:
+            type === "contact" && orderNumber.trim() ? orderNumber.trim().slice(0, 40) : undefined,
           phone: type === "wholesale" ? phone : undefined,
           business: type === "wholesale" ? business : undefined,
           city: type === "wholesale" ? city : undefined,
@@ -46,6 +49,7 @@ export function InquiryForm({ type, compact }: Props) {
       setDone(true);
       setName("");
       setEmail("");
+      setOrderNumber("");
       setPhone("");
       setBusiness("");
       setCity("");
@@ -102,6 +106,15 @@ export function InquiryForm({ type, compact }: Props) {
         placeholder={t("Email", "Correo", lang)}
         className={compact ? "input-field min-w-0 flex-1" : "input-field"}
       />
+      {type === "contact" && (
+        <input
+          value={orderNumber}
+          onChange={(e) => setOrderNumber(e.target.value.slice(0, 40))}
+          placeholder={t("Order number", "Número de pedido", lang)}
+          className="input-field"
+          maxLength={40}
+        />
+      )}
       {type === "wholesale" && (
         <input
           type="tel"

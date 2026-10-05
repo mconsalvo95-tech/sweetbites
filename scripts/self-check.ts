@@ -7,6 +7,15 @@ import { join } from "path";
 import { submitOrder, getOrder } from "../lib/orders";
 import { quotePromo } from "../lib/promos";
 import { customerOrderEmail, ownerOrderEmail } from "../lib/order-email";
+import {
+  bulkOrderActionLabel,
+  bulkStatusForOrder,
+  canEraseOrdersTab,
+  customerOrderStatusLabel,
+  fulfilledStatusFor,
+  isMidFulfillmentStatus,
+  reopenStatusFor,
+} from "../lib/order-status";
 import { canCustomerCancel } from "../lib/types";
 import { expectedSquareSignature, verifySquareSignature } from "../lib/square";
 import { parsePriceQuotes } from "../lib/shipping";
@@ -311,6 +320,23 @@ async function main() {
   assert(!canCustomerCancel("ready"), "Ready is not a status");
   assert(!canCustomerCancel("completed") && !canCustomerCancel("sent"), "Customer cannot cancel finished orders");
   assert(!canCustomerCancel("cancelled"), "Already cancelled is not cancellable");
+  assert(!canCustomerCancel("done"), "Done orders are not cancellable");
+
+  assert(isMidFulfillmentStatus("completed") && isMidFulfillmentStatus("sent"));
+  assert(!isMidFulfillmentStatus("pending") && !isMidFulfillmentStatus("done"));
+  assert(fulfilledStatusFor("ship") === "sent" && fulfilledStatusFor("pickup") === "completed");
+  assert(reopenStatusFor("delivery") === "completed");
+  assert(bulkStatusForOrder("pending", "ship") === "sent");
+  assert(bulkStatusForOrder("pending", "pickup") === "completed");
+  assert(bulkStatusForOrder("completed", "ship") === "done");
+  assert(bulkStatusForOrder("done", "ship") === "sent");
+  assert(bulkStatusForOrder("cancelled", "pickup") === "pending");
+  assert(bulkOrderActionLabel("pending", "en") === "Mark selected");
+  assert(bulkOrderActionLabel("pending", "es") === "Marcar seleccionados");
+  assert(bulkOrderActionLabel("completed", "en") === "Done");
+  assert(canEraseOrdersTab("done") && canEraseOrdersTab("sent") && !canEraseOrdersTab("pending"));
+  assert(customerOrderStatusLabel("done", "en") === "Done");
+  assert(customerOrderStatusLabel("done", "es") === "Listo");
 
   const sqBody = '{"type":"payment.updated"}';
   const sqUrl = "https://sweetbites.shop/api/square/webhook";

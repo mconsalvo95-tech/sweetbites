@@ -190,6 +190,7 @@ create table if not exists inquiries (
   business text,
   city text,
   message text,
+  order_number text,
   created_at timestamptz not null default now()
 );
 
@@ -381,7 +382,9 @@ create policy "Admins delete shipments" on shipments
 alter table orders drop constraint if exists orders_status_check;
 update orders set status = 'pending' where status = 'ready';
 alter table orders add constraint orders_status_check
-  check (status in ('pending', 'completed', 'sent', 'cancelled'));
+  check (status in ('pending', 'completed', 'sent', 'done', 'cancelled'));
+
+alter table inquiries add column if not exists order_number text;
 
 create or replace function public.cancel_own_order(order_id uuid)
 returns void

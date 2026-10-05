@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState, Fragment } from "react";
+import { useCallback, useEffect, useRef, useState, Fragment } from "react";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/lang";
 import { formatCad, t } from "@/lib/format";
@@ -16,6 +16,17 @@ import {
   sitePageTabLabel,
   type SitePageSlug,
 } from "@/lib/site-pages";
+import {
+  ORDER_TAB_STATUSES,
+  bulkOrderActionLabel,
+  bulkStatusForOrder,
+  canEraseOrdersTab,
+  customerOrderStatusLabel,
+  fulfilledStatusFor,
+  isMidFulfillmentStatus,
+  reopenStatusFor,
+  type OrderTabStatus,
+} from "@/lib/order-status";
 
 const inputClass =
   "w-full rounded-xl border border-blush/60 bg-white px-3 py-2 text-sm text-coal outline-none focus:border-berry";
@@ -86,27 +97,7 @@ const ADMIN_TABS = [
 
 type AdminTab = (typeof ADMIN_TABS)[number]["id"];
 
-const ORDER_STATUSES = ["pending", "completed", "sent", "cancelled"] as const;
-type OrderStatus = (typeof ORDER_STATUSES)[number];
-
-function orderStatusLabel(status: string, lang: "en" | "es") {
-  switch (status) {
-    case "pending":
-      return t("Pending", "Pendiente", lang);
-    case "completed":
-      return t("Picked up", "Recogido", lang);
-    case "sent":
-      return t("Shipped", "Enviado", lang);
-    case "cancelled":
-      return t("Cancelled", "Cancelado", lang);
-    default:
-      return status;
-  }
-}
-
-function isOrderDone(status: string) {
-  return status === "completed" || status === "sent";
-}
+const ORDER_STATUSES = ORDER_TAB_STATUSES;
 
 function fulfillmentLabel(fulfillment: OrderRow["fulfillment"], lang: "en" | "es") {
   if (fulfillment === "delivery") return t("Delivery", "Entrega", lang);
@@ -124,10 +115,6 @@ function orderItemSummary(row: OrderRow, lang: "en" | "es") {
       return `${item.qty}× ${name || item.product_id || ""}`;
     })
     .join(", ");
-}
-
-function canEraseOrders(status: string) {
-  return status === "completed" || status === "sent" || status === "cancelled";
 }
 
 function csvCell(value: string) {
@@ -184,10 +171,6 @@ function downloadOrdersExcel(rows: OrderRow[]) {
   a.download = `sweetbites-orders-${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(a.href);
-}
-
-function doneStatusFor(fulfillment: OrderRow["fulfillment"]): OrderStatus {
-  return fulfillment === "ship" ? "sent" : "completed";
 }
 
 function orderDoneCheckboxLabel(row: OrderRow, lang: "en" | "es") {
@@ -314,7 +297,9 @@ export function AdminClient() {
   const tab: AdminTab = ADMIN_TABS.some((item) => item.id === tabParam)
     ? (tabParam as AdminTab)
     : "orders";
-  const [orderFilter, setOrderFilter] = useState<OrderStatus>("pending");
+  const [orderFilter, setOrderFilter] = useState<OrderTabStatus>("pending");
+  const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(() => new Set());
+  const selectAllOrdersRef = useRef<HTMLInputElement>(null);
   const [promos, setPromos] = useState<PromoRow[]>([]);
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
@@ -392,6 +377,23 @@ export function AdminClient() {
   useEffect(() => {
     if (profile?.role === "admin") void load();
   }, [profile?.role, load]);
+
+  useEffect(() => {
+    setSelectedOrderIds(new Set());
+  }, [orderFilter]);
+
+  const visibleOrderIds = orders
+    .filter((row) => row.status === orderFilter)
+    .map((row) => row.id);
+  const selectedVisibleCount = visibleOrderIds.filter((id) => selectedOrderIds.has(id)).length;
+  const allVisibleSelected =
+    visibleOrderIds.length > 0 && selectedVisibleCount === visibleOrderIds.length;
+  const someVisibleSelected = selectedVisibleCount > 0 && !allVisibleSelected;
+
+  useEffect(() => {
+    const el = selectAllOrdersRef.current;
+    if (el) el.indeterminate = someVisibleSelected;
+  }, [someVisibleSelected, orderFilter, visibleOrderIds.length]);
 
   useEffect(() => {
     if (profile?.role !== "admin") return;
@@ -775,6 +777,76 @@ export function AdminClient() {
     flash(t("Saved", "Guardado", lang));
   };
 
+  const toggleSelectAllVisible = () => {
+    if (allVisibleSelected) {
+      setSelectedOrderIds(new Set());
+      return;
+    }
+    setSelectedOrderIds(new Set(visibleOrderIds));
+  };
+
+  const toggleOrderSelected = (id: string, checked: boolean) => {
+    setSelectedOrderIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const bulkUpdateOrderStatuses = async (
+    rows: OrderRow[],
+    nextForRow: (row: OrderRow) => string,
+  ) => {
+    if (!rows.length) return;
+
+    const byStatus = new Map<string, string[]>();
+    for (const row of rows) {
+      const next = nextForRow(row);
+      const ids = byStatus.get(next) ?? [];
+      ids.push(row.id);
+      byStatus.set(next, ids);
+    }
+
+    const applied: { id: string; status: string }[] = [];
+    for (const [next, ids] of byStatus) {
+      const { error } = await supabase.from("orders").update({ status: next }).in("id", ids);
+      if (error) {
+        flash(error.message);
+        if (applied.length) {
+          setOrders((rows) =>
+            rows.map((r) => {
+              const hit = applied.find((a) => a.id === r.id);
+              return hit ? { ...r, status: hit.status } : r;
+            }),
+          );
+          await load();
+        }
+        return;
+      }
+      for (const id of ids) applied.push({ id, status: next });
+    }
+
+    setOrders((rows) =>
+      rows.map((r) => {
+        const hit = applied.find((a) => a.id === r.id);
+        return hit ? { ...r, status: hit.status } : r;
+      }),
+    );
+    flash(t("Saved", "Guardado", lang));
+  };
+
+  const bulkApplySelected = async () => {
+    const selected = orders.filter((row) => row.status === orderFilter && selectedOrderIds.has(row.id));
+    await bulkUpdateOrderStatuses(selected, (row) => bulkStatusForOrder(orderFilter, row.fulfillment));
+    setSelectedOrderIds(new Set());
+  };
+
+  const bulkFulfillAllVisiblePending = async () => {
+    const pending = orders.filter((row) => row.status === "pending");
+    await bulkUpdateOrderStatuses(pending, (row) => fulfilledStatusFor(row.fulfillment));
+  };
+
   const visibleOrders = orders.filter((row) => row.status === orderFilter);
 
   const downloadVisibleOrders = () => {
@@ -784,7 +856,7 @@ export function AdminClient() {
   };
 
   const eraseVisibleOrders = async () => {
-    if (!canEraseOrders(orderFilter) || !visibleOrders.length) return;
+    if (!canEraseOrdersTab(orderFilter) || !visibleOrders.length) return;
     if (!eraseArmed) {
       setEraseArmed(true);
       flash(t("Click erase again to permanently delete this list.", "Haz clic otra vez para borrar esta lista para siempre.", lang));
@@ -842,7 +914,7 @@ export function AdminClient() {
                   orderFilter === s ? "bg-coal text-white" : "bg-white text-coal/70 shadow-sm hover:bg-blush/40"
                 }`}
               >
-                {orderStatusLabel(s, lang)}
+                {customerOrderStatusLabel(s, lang)}
                 {count ? ` ${count}` : ""}
               </button>
             );
@@ -857,7 +929,17 @@ export function AdminClient() {
             >
               {t("Download Excel", "Descargar Excel", lang)}
             </button>
-            {canEraseOrders(orderFilter) ? (
+            {orderFilter !== "pending" ? (
+              <button
+                type="button"
+                disabled={selectedVisibleCount === 0}
+                onClick={() => void bulkApplySelected()}
+                className="rounded-xl bg-berry px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {bulkOrderActionLabel(orderFilter, lang)} ({selectedVisibleCount})
+              </button>
+            ) : null}
+            {canEraseOrdersTab(orderFilter) ? (
               <button
                 type="button"
                 onClick={() => void eraseVisibleOrders()}
@@ -872,8 +954,8 @@ export function AdminClient() {
             ) : (
               <p className="text-xs text-coal/50">
                 {t(
-                  "Mark orders done first. Download Excel, then erase from Completed, Sent, or Cancelled.",
-                  "Marca los pedidos como hechos. Descarga Excel y luego borra desde Completado, Enviado o Cancelado.",
+                  "Mark orders done first. Download Excel, then erase from Picked up, Shipped, Done, or Cancelled.",
+                  "Marca los pedidos como hechos. Descarga Excel y luego borra desde Recogido, Enviado, Listo o Cancelado.",
                   lang,
                 )}
               </p>
@@ -891,7 +973,25 @@ export function AdminClient() {
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead>
                 <tr className="text-coal/60">
-                  <th className="pb-2 pr-2">{t("Fulfilled", "Completado", lang)}</th>
+                  <th className="pb-2 pr-2 w-8">
+                    <input
+                      ref={selectAllOrdersRef}
+                      type="checkbox"
+                      checked={orderFilter === "pending" ? false : allVisibleSelected}
+                      aria-label={
+                        orderFilter === "pending"
+                          ? t("Mark all", "Marcar todos", lang)
+                          : t("Select all", "Seleccionar todo", lang)
+                      }
+                      onChange={(e) => {
+                        if (orderFilter === "pending") {
+                          if (e.target.checked) void bulkFulfillAllVisiblePending();
+                          return;
+                        }
+                        toggleSelectAllVisible();
+                      }}
+                    />
+                  </th>
                   <th className="pb-2 pr-2">{t("Order", "Pedido", lang)}</th>
                   <th className="pb-2 pr-2">{t("Customer", "Cliente", lang)}</th>
                   <th className="pb-2 pr-2">{t("Items", "Artículos", lang)}</th>
@@ -908,26 +1008,24 @@ export function AdminClient() {
                     <Fragment key={row.id}>
                       <tr className="border-t border-blush/40">
                         <td className="py-2 pr-2">
-                          {row.status !== "cancelled" ? (
-                            <label className="flex flex-col gap-0.5 text-xs">
-                              <span className="flex items-center gap-1.5">
-                                <input
-                                  type="checkbox"
-                                  checked={isOrderDone(row.status)}
-                                  aria-label={orderDoneCheckboxLabel(row, lang)}
-                                  onChange={(e) =>
-                                    void saveOrderStatus(
-                                      row.id,
-                                      e.target.checked ? doneStatusFor(row.fulfillment) : "pending",
-                                    )
-                                  }
-                                />
-                                <span className="font-medium text-coal/80">
-                                  {orderDoneCheckboxLabel(row, lang)}
-                                </span>
-                              </span>
-                            </label>
-                          ) : null}
+                          <input
+                            type="checkbox"
+                            checked={orderFilter === "pending" ? false : selectedOrderIds.has(row.id)}
+                            aria-label={
+                              orderFilter === "pending"
+                                ? orderDoneCheckboxLabel(row, lang)
+                                : t("Select order", "Seleccionar pedido", lang)
+                            }
+                            onChange={(e) => {
+                              if (orderFilter === "pending") {
+                                if (e.target.checked) {
+                                  void saveOrderStatus(row.id, fulfilledStatusFor(row.fulfillment));
+                                }
+                                return;
+                              }
+                              toggleOrderSelected(row.id, e.target.checked);
+                            }}
+                          />
                         </td>
                         <td className="py-2 pr-2 whitespace-nowrap">
                           <button
@@ -960,6 +1058,33 @@ export function AdminClient() {
                               className="text-coal/50 hover:underline"
                             >
                               {t("Cancel", "Cancelar", lang)}
+                            </button>
+                          ) : isMidFulfillmentStatus(row.status) ? (
+                            <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
+                              <button
+                                type="button"
+                                onClick={() => void saveOrderStatus(row.id, "done")}
+                                className="font-medium text-berry hover:underline"
+                              >
+                                {t("Done", "Listo", lang)}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void saveOrderStatus(row.id, "pending")}
+                                className="text-coal/50 hover:text-berry hover:underline"
+                              >
+                                {t("Back to pending", "Volver a pendiente", lang)}
+                              </button>
+                            </span>
+                          ) : row.status === "done" ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void saveOrderStatus(row.id, reopenStatusFor(row.fulfillment))
+                              }
+                              className="text-coal/50 hover:underline"
+                            >
+                              {t("Reopen", "Reabrir", lang)}
                             </button>
                           ) : row.status === "cancelled" ? (
                             <button

@@ -15,6 +15,10 @@ export async function POST(request: Request) {
     if (body.type === "contact" && !body.name?.trim()) {
       return NextResponse.json({ error: "Name required" }, { status: 400 });
     }
+    const orderNumber =
+      body.type === "contact" && body.orderNumber?.trim()
+        ? body.orderNumber.trim().slice(0, 40)
+        : undefined;
     const result = await submitInquiry({
       ...body,
       email: body.email.trim(),
@@ -23,6 +27,7 @@ export async function POST(request: Request) {
       business: body.business?.trim(),
       city: body.city?.trim(),
       message: body.message?.trim(),
+      orderNumber,
     });
     return NextResponse.json(result);
   } catch (err) {

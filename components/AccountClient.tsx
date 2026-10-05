@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/lang";
 import { formatCad, t } from "@/lib/format";
+import { customerOrderStatusLabel } from "@/lib/order-status";
 import { canCustomerCancel } from "@/lib/types";
 import { getSupabaseBrowser } from "@/lib/supabase-browser";
 
@@ -256,7 +257,9 @@ export function AccountClient() {
                     <div className="flex items-center gap-3 text-right">
                       <div>
                         <p className="font-medium">{formatCad(order.total_cents)}</p>
-                        <p className="text-xs capitalize text-coal/50">{order.status}</p>
+                        <p className="text-xs text-coal/50">
+                          {customerOrderStatusLabel(order.status, lang)}
+                        </p>
                       </div>
                       {canCustomerCancel(order.status) && (
                         <button
