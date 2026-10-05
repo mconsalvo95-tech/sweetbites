@@ -118,7 +118,7 @@ export function HomeSlider({ slides, variant, ariaLabelEn, ariaLabelEs }: HomeSl
           {slides.map((slide, i) => (
             <article
               key={i}
-              className="relative aspect-[16/7] min-h-[180px] w-full shrink-0 sm:min-h-[280px]"
+              className="relative aspect-[16/7] min-h-[220px] w-full min-w-full shrink-0 basis-full sm:min-h-[280px]"
               aria-hidden={i !== index}
             >
               <Image
@@ -126,7 +126,7 @@ export function HomeSlider({ slides, variant, ariaLabelEn, ariaLabelEs }: HomeSl
                 alt=""
                 fill
                 unoptimized={slide.imageUrl.startsWith("http")}
-                className="object-cover"
+                className="object-cover object-center"
                 sizes="100vw"
                 priority={i === 0}
               />
@@ -136,7 +136,9 @@ export function HomeSlider({ slides, variant, ariaLabelEn, ariaLabelEs }: HomeSl
                 <div className="absolute inset-0 bg-gradient-to-r from-berry/80 via-berry/55 to-blush/40" />
               )}
 
-              <div className="absolute inset-0 flex flex-col justify-end px-5 pb-12 pt-5 sm:px-8 sm:pb-16 sm:pt-8">
+              <div className={`absolute inset-0 flex flex-col justify-end px-12 pb-10 pt-5 sm:px-8 sm:pb-16 sm:pt-8 ${
+                variant === "promo" ? "items-center text-center sm:items-start sm:text-left" : ""
+              }`}>
                 {variant === "promo" ? (
                   <>
                     {(slide.tagEn || slide.tagEs) && (
