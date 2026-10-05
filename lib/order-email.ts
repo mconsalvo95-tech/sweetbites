@@ -85,12 +85,14 @@ function cta(href: string, label: string, bg: string, color: string) {
   return `<a href="${esc(href)}" style="display:inline-block;background:${bg};color:${color};text-decoration:none;font-weight:700;font-size:15px;padding:12px 22px;border-radius:999px">${esc(label)}</a>`;
 }
 
+const RECEIPT_CDN = "https://sweetbites.shop";
+
 export function customerReceiptHtml(order: OrderEmailInput) {
   const lang = order.lang;
   const statusUrl = `${order.siteUrl}/order-status/${order.id}`;
   const contactUrl = `${order.siteUrl}/contact`;
-  const wordmark = `${order.siteUrl}/logos/receipt-wordmark.png`;
-  const mark = `${order.siteUrl}/logos/receipt-mark.png`;
+  const wordmark = `${RECEIPT_CDN}/logos/receipt-wordmark.png`;
+  const mark = `${RECEIPT_CDN}/logos/receipt-mark.png`;
   const paper = `background-color:#fffaf8;background-image:linear-gradient(rgba(255,250,248,0.88),rgba(255,250,248,0.88)),url('${mark}');background-repeat:no-repeat;background-position:center;background-size:320px`;
   const shortId = order.id.slice(0, 8);
   const addr = address(order);

@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { Product } from "@/lib/types";
 
 import { formatCad, pickDesc, pickName } from "@/lib/format";
+import { primaryProductImage } from "@/lib/product-images";
 
 
 
@@ -24,12 +25,12 @@ export function ProductCard({ product, lang }: { product: Product; lang: "en" | 
 
         <Image
 
-          src={product.imageUrl}
+          src={primaryProductImage(product.imageUrl)}
 
           alt={pickName(product, lang)}
 
           fill
-          unoptimized={product.imageUrl.startsWith("http")}
+          unoptimized={primaryProductImage(product.imageUrl).startsWith("http")}
 
           className="object-cover"
 

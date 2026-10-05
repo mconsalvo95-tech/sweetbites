@@ -77,16 +77,41 @@ export function Header() {
     <>
       <header className="site-header sticky top-0 z-50">
         <div className="grid h-full w-full grid-cols-[1fr_auto_1fr] items-center px-2 py-1 sm:px-3">
-          <button
-            type="button"
-            onClick={() => setDrawerOpen(true)}
-            className="flex h-10 w-10 items-center justify-center justify-self-start text-white transition-colors hover:text-white/80"
-            aria-label={t("Open menu", "Abrir menú", lang)}
-          >
-            <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden>
-              <path d="M4 6H18M4 11H18M4 16H18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-          </button>
+          <div className="flex min-w-0 items-center justify-self-start">
+            <button
+              type="button"
+              onClick={() => setDrawerOpen(true)}
+              className="flex h-10 w-10 shrink-0 items-center justify-center text-white transition-colors hover:text-white/80"
+              aria-label={t("Open menu", "Abrir menú", lang)}
+            >
+              <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden>
+                <path d="M4 6H18M4 11H18M4 16H18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            </button>
+            <nav
+              className="hidden items-center gap-2.5 pl-0.5 md:flex lg:gap-4"
+              aria-label={t("Main menu", "Menú principal", lang)}
+            >
+              <Link
+                href="/order"
+                className="whitespace-nowrap text-xs font-medium text-white/90 transition-colors hover:text-white lg:text-sm"
+              >
+                {t("Order", "Pedir", lang)}
+              </Link>
+              <Link
+                href="/about"
+                className="whitespace-nowrap text-xs font-medium text-white/90 transition-colors hover:text-white lg:text-sm"
+              >
+                {t("About", "Nosotros", lang)}
+              </Link>
+              <Link
+                href="/contact"
+                className="whitespace-nowrap text-xs font-medium text-white/90 transition-colors hover:text-white lg:text-sm"
+              >
+                {t("Contact", "Contacto", lang)}
+              </Link>
+            </nav>
+          </div>
 
           <Link href="/" className="justify-self-center">
             <Image
@@ -94,7 +119,7 @@ export function Header() {
               alt="Sweetbites"
               width={836}
               height={482}
-              className="h-20 w-auto max-w-[40vw] sm:h-28 sm:max-w-none lg:h-32"
+              className="h-16 w-auto max-w-[44vw] sm:h-28 sm:max-w-none lg:h-32"
               priority
             />
           </Link>

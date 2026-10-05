@@ -31,8 +31,8 @@ function Shell({ children }: { children: React.ReactNode }) {
     <div className="relative z-10">
       <Header />
       <main
-        className={`min-h-[calc(100vh-72px)] pb-24 ${
-          isHome ? "" : "mx-auto max-w-6xl px-4 pt-6"
+        className={`flex min-h-[calc(100vh-72px)] flex-col ${
+          isHome ? "" : "mx-auto max-w-6xl px-4 pb-24 pt-6"
         }`}
       >
         {children}

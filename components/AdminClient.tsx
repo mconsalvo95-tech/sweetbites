@@ -6,6 +6,8 @@ import { useCallback, useEffect, useState, Fragment } from "react";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/lang";
 import { formatCad, t } from "@/lib/format";
+import { parseProductImages, serializeProductImages } from "@/lib/product-images";
+import { DEFAULT_REVIEW_IMAGE, FALLBACK_REVIEW_ITEMS, type ReviewItem } from "@/lib/reviews";
 import { getSupabaseBrowser } from "@/lib/supabase-browser";
 import type { PromoKind } from "@/lib/promos";
 import {
@@ -36,6 +38,7 @@ type ProductRow = {
   active: boolean;
   category_id?: string;
   image_url?: string;
+  imageUrls?: string[];
   priceDraft?: string;
 };
 
@@ -75,6 +78,7 @@ const ADMIN_TABS = [
   { id: "orders", labelEn: "Orders", labelEs: "Pedidos" },
   { id: "menu", labelEn: "Menu prices", labelEs: "Precios del menú" },
   { id: "offers", labelEn: "Weekly offers", labelEs: "Ofertas de la semana" },
+  { id: "reviews", labelEn: "Reviews", labelEs: "Reseñas" },
   { id: "promos", labelEn: "Promo codes", labelEs: "Códigos de promo" },
   { id: "pages", labelEn: "Pages", labelEs: "Páginas" },
   { id: "access", labelEn: "Owner access", labelEs: "Acceso de dueña" },
@@ -90,9 +94,9 @@ function orderStatusLabel(status: string, lang: "en" | "es") {
     case "pending":
       return t("Pending", "Pendiente", lang);
     case "completed":
-      return t("Completed", "Completado", lang);
+      return t("Picked up", "Recogido", lang);
     case "sent":
-      return t("Sent", "Enviado", lang);
+      return t("Shipped", "Enviado", lang);
     case "cancelled":
       return t("Cancelled", "Cancelado", lang);
     default:
@@ -186,6 +190,26 @@ function doneStatusFor(fulfillment: OrderRow["fulfillment"]): OrderStatus {
   return fulfillment === "ship" ? "sent" : "completed";
 }
 
+function orderDoneCheckboxLabel(row: OrderRow, lang: "en" | "es") {
+  if (row.status === "sent") return t("Shipped", "Enviado", lang);
+  if (row.status === "completed") return t("Picked up", "Recogido", lang);
+  return row.fulfillment === "ship"
+    ? t("Mark shipped", "Marcar enviado", lang)
+    : t("Mark picked up", "Marcar recogido", lang);
+}
+
+function normalizeReviewRow(row: ReviewItem): ReviewItem {
+  const quote_en = row.quote_en.trim();
+  const city_en = row.city_en.trim();
+  return {
+    ...row,
+    quote_en,
+    quote_es: quote_en,
+    city_en,
+    city_es: city_en,
+  };
+}
+
 type OfferRow = {
   id: string;
   sort: number;
@@ -216,6 +240,16 @@ const emptyOffer = (): OfferRow => ({
   cta_href: "/order",
   category_id: "cat-cookies",
   priceDraft: "",
+});
+
+const emptyReview = (): ReviewItem => ({
+  quote_en: "",
+  quote_es: "",
+  reviewer_name: "",
+  city_en: "",
+  city_es: "",
+  image_url: DEFAULT_REVIEW_IMAGE,
+  active: true,
 });
 
 function linkedProduct(offer: OfferRow, products: ProductRow[]) {
@@ -294,6 +328,8 @@ export function AdminClient() {
   const [openOrderId, setOpenOrderId] = useState<string | null>(null);
   const [eraseArmed, setEraseArmed] = useState(false);
   const [offers, setOffers] = useState<OfferRow[]>([]);
+  const [reviews, setReviews] = useState<ReviewItem[]>([]);
+  const [draftReview, setDraftReview] = useState<ReviewItem>(emptyReview);
   const [status, setStatus] = useState("");
   const [grantEmail, setGrantEmail] = useState("");
 
@@ -311,10 +347,11 @@ export function AdminClient() {
   const load = useCallback(async () => {
     const supabase = getSupabaseBrowser();
     if (!supabase) return;
-    const [{ data: promoData }, { data: offerData }, { data: productData }, { data: orderData }, { data: catData }] =
+    const [{ data: promoData }, { data: offerData }, { data: reviewPage }, { data: productData }, { data: orderData }, { data: catData }] =
       await Promise.all([
         supabase.from("promo_codes").select("*").order("code"),
         supabase.from("weekly_offers").select("*").order("sort"),
+        supabase.from("site_pages").select("body").eq("slug", "reviews").maybeSingle(),
         supabase.from("products").select("id, name_en, name_es, slug, price_cents, active, category_id, image_url").order("name_en"),
         supabase
           .from("orders")
@@ -325,9 +362,14 @@ export function AdminClient() {
           .limit(50),
         supabase.from("categories").select("id, name_en, name_es").order("sort"),
       ]);
-    const productRows = (productData as ProductRow[]) ?? [];
+    const productRows = ((productData as ProductRow[]) ?? []).map((row) => ({
+      ...row,
+      imageUrls: parseProductImages(row.image_url),
+    }));
     setPromos((promoData as PromoRow[]) ?? []);
     setProducts(productRows);
+    const savedReviews = (reviewPage?.body as { items?: ReviewItem[] } | null)?.items;
+    setReviews(savedReviews?.length ? savedReviews : FALLBACK_REVIEW_ITEMS.map((row) => ({ ...row })));
     setOffers(
       ((offerData as OfferRow[]) ?? []).map((o) => {
         const p = linkedProduct(o, productRows);
@@ -529,6 +571,45 @@ export function AdminClient() {
     await load();
   };
 
+  const writeReviews = async (items: ReviewItem[]) => {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) return;
+    const normalized = items.map(normalizeReviewRow);
+    const { error } = await supabase.from("site_pages").upsert({
+      slug: "reviews",
+      body: { items: normalized },
+      updated_at: new Date().toISOString(),
+    });
+    if (error) {
+      flash(error.message);
+      return;
+    }
+    setReviews(normalized);
+    flash(t("Saved", "Guardado", lang));
+  };
+
+  const saveReview = async (index: number, row: ReviewItem) => {
+    if (!row.quote_en.trim() || !row.reviewer_name.trim()) {
+      flash(t("Quote and name are required", "Quote and name are required", lang));
+      return;
+    }
+    const next = reviews.map((item, i) => (i === index ? normalizeReviewRow(row) : item));
+    await writeReviews(next);
+  };
+
+  const addReview = async (row: ReviewItem) => {
+    if (!row.quote_en.trim() || !row.reviewer_name.trim()) {
+      flash(t("Quote and name are required", "Quote and name are required", lang));
+      return;
+    }
+    await writeReviews([...reviews, normalizeReviewRow(row)]);
+    setDraftReview(emptyReview());
+  };
+
+  const deleteReview = async (index: number) => {
+    await writeReviews(reviews.filter((_, i) => i !== index));
+  };
+
   const deleteOffer = async (id: string) => {
     if (!id) return;
     const { error } = await supabase.from("weekly_offers").delete().eq("id", id);
@@ -553,7 +634,7 @@ export function AdminClient() {
 
   const saveProduct = async (row: ProductRow) => {
     const price_cents = toCents(row.priceDraft ?? dollars(row.price_cents));
-    const image_url = row.image_url?.trim() || "/test-images/swb-banner.png";
+    const image_url = serializeProductImages(row.imageUrls ?? parseProductImages(row.image_url));
     const { error } = await supabase
       .from("products")
       .update({ price_cents, active: row.active, image_url })
@@ -564,21 +645,44 @@ export function AdminClient() {
     }
     setProducts((rows) =>
       rows.map((r) =>
-        r.id === row.id ? { ...r, price_cents, image_url, priceDraft: undefined } : r,
+        r.id === row.id
+          ? { ...r, price_cents, image_url, imageUrls: parseProductImages(image_url), priceDraft: undefined }
+          : r,
       ),
     );
     flash(t("Saved", "Guardado", lang));
   };
 
-  const uploadProductImage = async (row: ProductRow, file: File) => {
+  const uploadProductImage = async (row: ProductRow, file: File, replaceIndex?: number) => {
     try {
-      const image_url = await uploadAdminImage(file);
-      const next = { ...row, image_url };
-      setProducts((rows) => rows.map((r) => (r.id === row.id ? next : r)));
-      await saveProduct(next);
+      const url = await uploadAdminImage(file);
+      setProducts((rows) =>
+        rows.map((r) => {
+          if (r.id !== row.id) return r;
+          const prev = r.imageUrls ?? parseProductImages(r.image_url);
+          let imageUrls: string[];
+          if (replaceIndex !== undefined && replaceIndex >= 0) {
+            imageUrls = [...prev];
+            imageUrls[replaceIndex] = url;
+          } else {
+            imageUrls = [...prev, url];
+          }
+          return { ...r, imageUrls, image_url: serializeProductImages(imageUrls) };
+        }),
+      );
     } catch (err) {
       flash(err instanceof Error ? err.message : t("Upload failed", "No se pudo subir", lang));
     }
+  };
+
+  const removeProductImage = (row: ProductRow, index: number) => {
+    setProducts((rows) =>
+      rows.map((r) => {
+        if (r.id !== row.id) return r;
+        const imageUrls = (r.imageUrls ?? parseProductImages(r.image_url)).filter((_, i) => i !== index);
+        return { ...r, imageUrls, image_url: serializeProductImages(imageUrls) };
+      }),
+    );
   };
 
   const saveSitePage = async () => {
@@ -702,7 +806,7 @@ export function AdminClient() {
       <div>
         <h1 className="font-display text-3xl text-berry">{t("Shop admin", "Admin de la tienda", lang)}</h1>
         <p className="mt-1 text-sm text-coal/70">
-          {t("Orders, menu prices, weekly banners, and promo codes.", "Pedidos, precios del menú, banners de la semana y códigos de promo.", lang)}
+          {t("Orders, menu prices, weekly banners, reviews, and promo codes.", "Pedidos, precios del menú, banners de la semana, reseñas y códigos de promo.", lang)}
         </p>
         {status && <p className="mt-2 text-sm text-berry">{status}</p>}
         <nav className="mt-6 flex flex-wrap gap-2" aria-label={t("Admin sections", "Secciones de admin", lang)}>
@@ -787,7 +891,7 @@ export function AdminClient() {
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead>
                 <tr className="text-coal/60">
-                  <th className="pb-2 pr-2">{t("Done", "Hecho", lang)}</th>
+                  <th className="pb-2 pr-2">{t("Fulfilled", "Completado", lang)}</th>
                   <th className="pb-2 pr-2">{t("Order", "Pedido", lang)}</th>
                   <th className="pb-2 pr-2">{t("Customer", "Cliente", lang)}</th>
                   <th className="pb-2 pr-2">{t("Items", "Artículos", lang)}</th>
@@ -805,17 +909,24 @@ export function AdminClient() {
                       <tr className="border-t border-blush/40">
                         <td className="py-2 pr-2">
                           {row.status !== "cancelled" ? (
-                            <input
-                              type="checkbox"
-                              checked={isOrderDone(row.status)}
-                              aria-label={t("Done", "Hecho", lang)}
-                              onChange={(e) =>
-                                void saveOrderStatus(
-                                  row.id,
-                                  e.target.checked ? doneStatusFor(row.fulfillment) : "pending",
-                                )
-                              }
-                            />
+                            <label className="flex flex-col gap-0.5 text-xs">
+                              <span className="flex items-center gap-1.5">
+                                <input
+                                  type="checkbox"
+                                  checked={isOrderDone(row.status)}
+                                  aria-label={orderDoneCheckboxLabel(row, lang)}
+                                  onChange={(e) =>
+                                    void saveOrderStatus(
+                                      row.id,
+                                      e.target.checked ? doneStatusFor(row.fulfillment) : "pending",
+                                    )
+                                  }
+                                />
+                                <span className="font-medium text-coal/80">
+                                  {orderDoneCheckboxLabel(row, lang)}
+                                </span>
+                              </span>
+                            </label>
                           ) : null}
                         </td>
                         <td className="py-2 pr-2 whitespace-nowrap">
@@ -929,19 +1040,32 @@ export function AdminClient() {
                     {lang === "es" ? <p className="text-xs text-coal/50">{row.name_en}</p> : null}
                   </td>
                   <td className="py-2">
-                    {row.image_url ? (
-                      <img src={row.image_url} alt="" className="mb-1 h-12 w-12 rounded-lg object-cover" />
-                    ) : null}
+                    <div className="flex max-w-[200px] flex-wrap gap-1">
+                      {(row.imageUrls ?? parseProductImages(row.image_url)).map((url, idx) => (
+                        <div key={`${url}-${idx}`} className="relative">
+                          <img src={url} alt="" className="h-12 w-12 rounded-lg object-cover" />
+                          <button
+                            type="button"
+                            title={t("Remove", "Remove", lang)}
+                            onClick={() => removeProductImage(row, idx)}
+                            className="absolute -right-1 -top-1 rounded-full bg-coal/80 px-1 text-[10px] text-white"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                     <input
                       type="file"
                       accept="image/jpeg,image/png,image/webp,image/gif"
-                      className="max-w-[140px] text-xs file:mr-1 file:rounded file:border-0 file:bg-blush/50 file:px-2 file:py-1 file:text-xs"
+                      className="mt-1 max-w-[140px] text-xs file:mr-1 file:rounded file:border-0 file:bg-blush/50 file:px-2 file:py-1 file:text-xs"
                       onChange={(e) => {
                         const file = e.target.files?.[0];
                         e.target.value = "";
                         if (file) void uploadProductImage(row, file);
                       }}
                     />
+                    <p className="mt-0.5 text-[10px] text-coal/50">{t("Save to apply", "Guardar para aplicar", lang)}</p>
                   </td>
                   <td className="py-2">
                     <input
@@ -1093,6 +1217,29 @@ export function AdminClient() {
             lang,
           )}
         </p>
+      </section>
+      )}
+
+      {tab === "reviews" && (
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold">{t("Reviews", "Reseñas", lang)}</h2>
+        {reviews.map((row, index) => (
+          <ReviewForm
+            key={`${row.reviewer_name}-${index}`}
+            review={row}
+            onChange={(next) => setReviews((rows) => rows.map((r, i) => (i === index ? next : r)))}
+            onSave={() => saveReview(index, reviews[index] ?? row)}
+            onDelete={() => deleteReview(index)}
+          />
+        ))}
+        <div className="rounded-2xl border border-dashed border-blush bg-white p-4">
+          <p className="mb-3 text-sm font-medium">{t("Add review", "Agregar reseña", lang)}</p>
+          <ReviewForm
+            review={draftReview}
+            onChange={setDraftReview}
+            onSave={() => addReview(draftReview)}
+          />
+        </div>
       </section>
       )}
 
@@ -1557,6 +1704,101 @@ function SitePageEditor({
         className={inputClass}
         rows={2}
       />
+    </div>
+  );
+}
+
+function ReviewForm({
+  review,
+  onChange,
+  onSave,
+  onDelete,
+}: {
+  review: ReviewItem;
+  onChange: (row: ReviewItem) => void;
+  onSave: () => void;
+  onDelete?: () => void;
+}) {
+  const set = (patch: Partial<ReviewItem>) => onChange({ ...review, ...patch });
+  const [uploading, setUploading] = useState(false);
+  const [uploadMsg, setUploadMsg] = useState("");
+
+  const pickFile = async (file: File | undefined) => {
+    if (!file) return;
+    setUploadMsg("");
+    setUploading(true);
+    try {
+      set({ image_url: await uploadAdminImage(file) });
+    } catch (err) {
+      setUploadMsg(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2 rounded-2xl bg-white p-4 shadow-sm">
+      <textarea
+        value={review.quote_en}
+        onChange={(e) => set({ quote_en: e.target.value })}
+        placeholder="Quote"
+        rows={2}
+        className={inputClass}
+      />
+      <div className="grid gap-2 sm:grid-cols-2">
+        <input
+          value={review.reviewer_name}
+          onChange={(e) => set({ reviewer_name: e.target.value })}
+          placeholder="Name"
+          className={inputClass}
+        />
+        <input
+          value={review.city_en}
+          onChange={(e) => set({ city_en: e.target.value })}
+          placeholder="City"
+          className={inputClass}
+        />
+      </div>
+      <div>
+        <input
+          value={review.image_url}
+          onChange={(e) => set({ image_url: e.target.value })}
+          placeholder="Image URL"
+          className={inputClass}
+        />
+        <label className="mt-2 block text-sm text-coal/70">
+          {uploading ? "Uploading…" : "Or upload from this computer"}
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            disabled={uploading}
+            className="mt-1 block w-full text-sm"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              void pickFile(file);
+            }}
+          />
+        </label>
+        {uploadMsg ? <p className="text-sm text-berry">{uploadMsg}</p> : null}
+        {review.image_url ? (
+          <img src={review.image_url} alt="" className="mt-2 h-20 rounded-lg object-cover" />
+        ) : null}
+      </div>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={review.active} onChange={(e) => set({ active: e.target.checked })} />
+        Show on homepage
+      </label>
+      <div className="flex gap-2">
+        <button type="button" onClick={onSave} className="rounded-xl bg-berry px-4 py-2 text-sm font-medium text-white">
+          Save
+        </button>
+        {onDelete && (
+          <button type="button" onClick={onDelete} className="rounded-xl px-4 py-2 text-sm text-coal/60 hover:text-berry">
+            Delete
+          </button>
+        )}
+      </div>
     </div>
   );
 }

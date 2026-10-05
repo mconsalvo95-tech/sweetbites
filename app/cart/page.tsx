@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCart } from "@/lib/cart";
@@ -14,7 +14,8 @@ import {
   pickName,
   t,
 } from "@/lib/format";
-import { localDateIso, WANTED_ON_RE } from "@/lib/shop";
+import { isAllowedWantedOn, minWantedOnIso, WANTED_ON_RE } from "@/lib/shop";
+import { primaryProductImage } from "@/lib/product-images";
 import { MapLinks, PickupHint } from "@/components/FulfillmentPicker";
 import type { Fulfillment, ShippingService } from "@/lib/types";
 
@@ -46,7 +47,13 @@ export default function CartPage() {
   const [province, setProvince] = useState("AB");
   const [postal, setPostal] = useState("");
   const [notes, setNotes] = useState("");
-  const [wantedOn, setWantedOn] = useState(localDateIso);
+  const [wantedOn, setWantedOn] = useState(minWantedOnIso);
+  const shipAddressTouched = useRef({
+    street: false,
+    city: false,
+    province: false,
+    postal: false,
+  });
   const [serviceCode, setServiceCode] = useState("");
   const [rates, setRates] = useState<ShippingService[]>([]);
   const [ratesSource, setRatesSource] = useState<"cpc" | "mock" | "">("");
@@ -78,6 +85,22 @@ export default function CartPage() {
     setName((value) => value || profile?.display_name || "");
     setPhone((value) => value || profile?.phone || "");
   }, [user, profile]);
+
+  useEffect(() => {
+    if (fulfillment !== "ship" || !profile) return;
+    if (!shipAddressTouched.current.street && profile.address_street) {
+      setStreet((v) => v || profile.address_street || "");
+    }
+    if (!shipAddressTouched.current.city && profile.address_city) {
+      setCity((v) => v || profile.address_city || "");
+    }
+    if (!shipAddressTouched.current.province && profile.address_province) {
+      setProvince(profile.address_province);
+    }
+    if (!shipAddressTouched.current.postal && profile.address_postal) {
+      setPostal((v) => v || profile.address_postal || "");
+    }
+  }, [fulfillment, profile]);
 
   useEffect(() => {
     if (fulfillment !== "ship") {
@@ -217,6 +240,16 @@ export default function CartPage() {
       setError(t("Pick a pickup or ship date", "Elige una fecha de recogida o envío", lang));
       return;
     }
+    if (!isAllowedWantedOn(wantedOn)) {
+      setError(
+        t(
+          "Orders require a minimum of 2 days’ notice. Same-day and next-day orders are not available.",
+          "Los pedidos requieren un mínimo de 2 días de anticipación. No hay pedidos para hoy ni para mañana.",
+          lang,
+        ),
+      );
+      return;
+    }
 
     if (fulfillment === "ship") {
       if (!street.trim() || !city.trim() || !province) {
@@ -339,7 +372,14 @@ export default function CartPage() {
           <div key={line.lineId} className="flex gap-3 rounded-[18px] bg-white p-3 shadow-sm">
             <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-blush/30">
               {line.imageUrl ? (
-                <Image src={line.imageUrl} alt="" fill unoptimized={line.imageUrl.startsWith("http")} className="object-cover" sizes="64px" />
+                <Image
+                  src={primaryProductImage(line.imageUrl)}
+                  alt=""
+                  fill
+                  unoptimized={primaryProductImage(line.imageUrl).startsWith("http")}
+                  className="object-cover"
+                  sizes="64px"
+                />
               ) : null}
             </div>
             <div className="min-w-0 flex-1">
@@ -410,12 +450,19 @@ export default function CartPage() {
           <input
             type="date"
             required
-            min={localDateIso()}
+            min={minWantedOnIso()}
             value={wantedOn}
             onChange={(e) => setWantedOn(e.target.value)}
             className="input-field mt-2"
           />
         </label>
+        <p className="mt-2 text-xs text-coal/65">
+          {t(
+            "Orders require a minimum of 2 days’ notice. Same-day and next-day orders are not available.",
+            "Los pedidos requieren un mínimo de 2 días de anticipación. No hay pedidos para hoy ni para mañana.",
+            lang,
+          )}
+        </p>
       </div>
 
       <div className="space-y-3 rounded-[18px] bg-white p-4 shadow-sm">
@@ -453,59 +500,70 @@ export default function CartPage() {
         />
       </div>
 
-      <div className="space-y-3 rounded-[18px] bg-white p-4 shadow-sm">
-        <h2 className="font-medium">
-          {fulfillment === "ship"
-            ? t("Ship to (Canada)", "Enviar a (Canadá)", lang)
-            : t("Address", "Dirección", lang)}
-        </h2>
-        {fulfillment === "pickup" && <PickupHint />}
-        <p className="text-sm text-coal/70">
-          {t(
-            "Open Maps to look up an address, then type it here.",
-            "Abre Maps para buscar una dirección y luego escríbela aquí.",
-            lang,
-          )}
-        </p>
-        <MapLinks
-          query={[street, city, postal].some((part) => part.trim())
-            ? [street, city, province, postal].filter((part) => part.trim()).join(", ")
-            : ""}
-        />
-        <input
-          value={street}
-          onChange={(e) => setStreet(e.target.value)}
-          placeholder={t("Street address", "Dirección", lang)}
-          className="input-field"
-        />
-        <input
-          value={city}
-          onChange={(e) => setCity(e.target.value)}
-          placeholder={t("City", "Ciudad", lang)}
-          className="input-field"
-        />
-        <div className="grid grid-cols-2 gap-2">
-          <select
-            value={province}
-            onChange={(e) => setProvince(e.target.value)}
-            className="input-field"
-          >
-            {PROVINCES.map((p) => (
-              <option key={p} value={p}>{p}</option>
-            ))}
-          </select>
-          <input
-            value={postal}
-            onChange={(e) => {
-              setPostal(e.target.value.toUpperCase());
-              setPostalError("");
-            }}
-            placeholder="A1A 1A1"
-            className="input-field uppercase"
-          />
+      {fulfillment === "pickup" ? (
+        <div className="rounded-[18px] bg-white p-4 shadow-sm">
+          <PickupHint />
         </div>
-        {postalError && <p className="text-sm text-red-600">{postalError}</p>}
-      </div>
+      ) : (
+        <div className="space-y-3 rounded-[18px] bg-white p-4 shadow-sm">
+          <h2 className="font-medium">{t("Ship in Canada", "Enviar en Canadá", lang)}</h2>
+          <p className="text-sm text-coal/70">
+            {t(
+              "Open Maps to look up an address, then type it here.",
+              "Abre Maps para buscar una dirección y luego escríbela aquí.",
+            lang,
+            )}
+          </p>
+          <MapLinks
+            query={[street, city, postal].some((part) => part.trim())
+              ? [street, city, province, postal].filter((part) => part.trim()).join(", ")
+              : ""}
+          />
+          <input
+            value={street}
+            onChange={(e) => {
+              shipAddressTouched.current.street = true;
+              setStreet(e.target.value);
+            }}
+            placeholder={t("Street address", "Dirección", lang)}
+            className="input-field"
+          />
+          <input
+            value={city}
+            onChange={(e) => {
+              shipAddressTouched.current.city = true;
+              setCity(e.target.value);
+            }}
+            placeholder={t("City", "Ciudad", lang)}
+            className="input-field"
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <select
+              value={province}
+              onChange={(e) => {
+                shipAddressTouched.current.province = true;
+                setProvince(e.target.value);
+              }}
+              className="input-field"
+            >
+              {PROVINCES.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+            <input
+              value={postal}
+              onChange={(e) => {
+                shipAddressTouched.current.postal = true;
+                setPostal(e.target.value.toUpperCase());
+                setPostalError("");
+              }}
+              placeholder="A1A 1A1"
+              className="input-field uppercase"
+            />
+          </div>
+          {postalError && <p className="text-sm text-red-600">{postalError}</p>}
+        </div>
+      )}
 
       {fulfillment === "ship" && ratesError && (
         <p className="text-sm text-red-600">{ratesError}</p>

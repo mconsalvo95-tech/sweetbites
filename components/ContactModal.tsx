@@ -17,7 +17,6 @@ import { t } from "@/lib/format";
 import {
   allHoursLines,
   shop,
-  shopAddressLine,
   todayHoursLine,
 } from "@/lib/shop";
 import { SocialLinks } from "./SocialLinks";
@@ -47,15 +46,6 @@ export function ContactModalProvider({ children }: { children: ReactNode }) {
   );
 }
 
-function PinIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden className="shrink-0">
-      <path d="M9 1.5C6.1 1.5 3.75 3.85 3.75 6.75C3.75 10.5 9 16.5 9 16.5C9 16.5 14.25 10.5 14.25 6.75C14.25 3.85 11.9 1.5 9 1.5Z" stroke="currentColor" strokeWidth="1.2" />
-      <circle cx="9" cy="6.75" r="1.75" stroke="currentColor" strokeWidth="1.2" />
-    </svg>
-  );
-}
-
 function PhoneIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden className="shrink-0">
@@ -79,7 +69,6 @@ const actions = [
   { key: "call", href: shop.phoneTel, labelEn: "Call", labelEs: "Llamar", external: true },
   { key: "whatsapp", href: shop.whatsapp, labelEn: "WhatsApp", labelEs: "WhatsApp", external: true },
   { key: "instagram", href: shop.instagram, labelEn: "Instagram", labelEs: "Instagram", external: true },
-  { key: "directions", href: shop.mapsUrl, labelEn: "Directions", labelEs: "Dirección", external: true },
 ] as const;
 
 function ActionIcon({ actionKey }: { actionKey: (typeof actions)[number]["key"] }) {
@@ -110,13 +99,6 @@ function ActionIcon({ actionKey }: { actionKey: (typeof actions)[number]["key"] 
           <rect x="3" y="3" width="18" height="18" rx="5" stroke="currentColor" strokeWidth="1.8" />
           <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.8" />
           <circle cx="17.2" cy="6.8" r="1.1" fill="currentColor" />
-        </svg>
-      );
-    case "directions":
-      return (
-        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
-          <path d="M9 2L15 6V12L9 16L3 12V6L9 2Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-          <path d="M9 6V10M9 10L11 8.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
         </svg>
       );
   }
@@ -191,10 +173,6 @@ function ContactModal({ open, onClose }: { open: boolean; onClose: () => void })
         </div>
 
         <div className="mt-5 space-y-3 text-sm text-coal/85">
-          <div className="flex gap-3">
-            <PinIcon />
-            <span>{shopAddressLine()}</span>
-          </div>
           <div className="flex gap-3">
             <PhoneIcon />
             <a href={shop.phoneTel} className="hover:text-berry">{shop.phoneDisplay}</a>

@@ -46,6 +46,8 @@ export function AuthForm({ mode }: { mode: Mode }) {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   if (!configured) {
     return (
@@ -158,15 +160,29 @@ export function AuthForm({ mode }: { mode: Mode }) {
           <label htmlFor="password" className="mb-1 block text-sm font-medium text-coal/80">
             {t("Password", "Contraseña", lang)}
           </label>
-          <input
-            id="password"
-            type="password"
-            required
-            autoComplete={mode === "login" ? "current-password" : "new-password"}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className={inputClass}
-          />
+          <div className="relative">
+            <input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              required
+              autoComplete={mode === "login" ? "current-password" : "new-password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className={`${inputClass} pr-12`}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-coal/60 hover:text-berry"
+              aria-label={
+                showPassword
+                  ? t("Hide password", "Ocultar contraseña", lang)
+                  : t("Show password", "Mostrar contraseña", lang)
+              }
+            >
+              {showPassword ? t("Hide", "Ocultar", lang) : t("Show", "Mostrar", lang)}
+            </button>
+          </div>
         </div>
 
         {mode === "signup" && (
@@ -174,15 +190,29 @@ export function AuthForm({ mode }: { mode: Mode }) {
             <label htmlFor="confirm" className="mb-1 block text-sm font-medium text-coal/80">
               {t("Confirm password", "Confirmar contraseña", lang)}
             </label>
-            <input
-              id="confirm"
-              type="password"
-              required
-              autoComplete="new-password"
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              className={inputClass}
-            />
+            <div className="relative">
+              <input
+                id="confirm"
+                type={showConfirm ? "text" : "password"}
+                required
+                autoComplete="new-password"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                className={`${inputClass} pr-12`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirm((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-coal/60 hover:text-berry"
+                aria-label={
+                  showConfirm
+                    ? t("Hide password", "Ocultar contraseña", lang)
+                    : t("Show password", "Mostrar contraseña", lang)
+                }
+              >
+                {showConfirm ? t("Hide", "Ocultar", lang) : t("Show", "Mostrar", lang)}
+              </button>
+            </div>
           </div>
         )}
 

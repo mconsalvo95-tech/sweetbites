@@ -7,7 +7,7 @@ import { getSupabaseAdmin } from "./supabase-admin";
 import { getOriginPostal, resolveShipRate } from "./shipping";
 import { quotePromoCode } from "./promos";
 import { sendOrderEmails } from "./mail";
-import { WANTED_ON_RE, wantedNote, wantedOnFromNotes } from "./shop";
+import { isAllowedWantedOn, WANTED_ON_RE, wantedNote, wantedOnFromNotes } from "./shop";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const LOCAL_FILE = join(process.cwd(), ".local-orders.json");
@@ -65,6 +65,9 @@ export async function submitOrder(
   const fulfillment: Fulfillment = input.fulfillment === "delivery" ? "pickup" : input.fulfillment;
   if (!WANTED_ON_RE.test(input.wantedOn ?? "")) {
     throw new Error("Select a date");
+  }
+  if (!isAllowedWantedOn(input.wantedOn as string)) {
+    throw new Error("Order date too soon");
   }
   const notes = wantedNote(fulfillment === "ship" ? "ship" : "pickup", input.wantedOn as string, input.notes, input.lang);
 

@@ -10,7 +10,8 @@ import { customerOrderEmail, ownerOrderEmail } from "../lib/order-email";
 import { canCustomerCancel } from "../lib/types";
 import { expectedSquareSignature, verifySquareSignature } from "../lib/square";
 import { parsePriceQuotes } from "../lib/shipping";
-import { wantedNote, wantedOnFromNotes } from "../lib/shop";
+import { parseProductImages, serializeProductImages } from "../lib/product-images";
+import { isAllowedWantedOn, localDateIso, minWantedOnIso, wantedNote, wantedOnFromNotes } from "../lib/shop";
 
 const LOCAL_FILE = join(process.cwd(), ".local-orders.json");
 
@@ -19,6 +20,18 @@ function assert(cond: unknown, msg: string): asserts cond {
 }
 
 async function main() {
+  const okDate = minWantedOnIso();
+  assert(isAllowedWantedOn(okDate), "min wanted date should be allowed");
+  assert(!isAllowedWantedOn(localDateIso()), "today should not be allowed for orders");
+  assert(
+    serializeProductImages(["https://a.test/1.jpg"]) === "https://a.test/1.jpg",
+    "single image should stay plain URL",
+  );
+  assert(
+    parseProductImages('["https://a.test/1.jpg","https://a.test/2.jpg"]').length === 2,
+    "JSON array images should parse",
+  );
+
   const parsed = parsePriceQuotes([
     {
       serviceCode: "DOM.RP",
@@ -64,7 +77,7 @@ async function main() {
     discountCents: 70,
     totalCents: 630,
     promoCode: "SWEET10",
-    wantedOn: "2026-10-02",
+    wantedOn: okDate,
     items: [
       {
         lineId: "1",
@@ -86,22 +99,23 @@ async function main() {
     buyer.text.includes("Pickup") && buyer.text.includes("195 Lougheed Close"),
     "pickup confirmation should include kitchen address",
   );
-  assert(buyer.text.includes("Pickup date: 2026-10-02"), "pickup confirmation should include requested date");
+  assert(buyer.text.includes(`Pickup date: ${okDate}`), "pickup confirmation should include requested date");
   assert(buyer.html.includes("Review order") && buyer.html.includes("Order #aaaaaaaa"), "receipt should have order number and review button");
   assert(buyer.html.includes("Need to change order date?"), "receipt should offer a date change instead of cancel");
   assert(!buyer.html.includes("Cancel order"), "receipt should not offer cancellation");
-  assert(buyer.html.includes("/logos/receipt-wordmark.png"), "receipt header should use the wordmark");
-  assert(buyer.html.includes("/logos/receipt-mark.png"), "receipt background should use the coal badge");
+  assert(buyer.html.includes("https://sweetbites.shop/logos/receipt-wordmark.png"), "receipt header should use production wordmark");
+  assert(buyer.html.includes("https://sweetbites.shop/logos/receipt-mark.png"), "receipt should use production watermark img");
+  assert(buyer.html.includes("<img"), "receipt should use img tags for branding");
   assert(buyer.html.includes("Maya") && buyer.html.includes("$6.30"), "receipt should use this customer's total");
   assert(buyer.html.includes("195 Lougheed Close"), "receipt should include the pickup address");
   assert(!buyer.html.includes("Postable"), "receipt should be Sweetbites, not the sample brand");
   const shopMail = ownerOrderEmail(sample);
   assert(shopMail.text.includes("195 Lougheed Close"), "owner email should include pickup address");
-  assert(shopMail.text.includes("Pickup date: 2026-10-02"), "owner email should include requested date");
+  assert(shopMail.text.includes(`Pickup date: ${okDate}`), "owner email should include requested date");
   assert(shopMail.text.includes("maya@example.com") && shopMail.text.includes("Open:"), "owner email should include contact + link");
-  const merged = wantedNote("pickup", "2026-10-02", "nut-free", "en");
-  assert(merged.startsWith("Pickup date: 2026-10-02"), "wanted note should lead with date");
-  assert(wantedOnFromNotes(merged) === "2026-10-02", "should parse wanted date from notes");
+  const merged = wantedNote("pickup", okDate, "nut-free", "en");
+  assert(merged.startsWith(`Pickup date: ${okDate}`), "wanted note should lead with date");
+  assert(wantedOnFromNotes(merged) === okDate, "should parse wanted date from notes");
 
   if (existsSync(LOCAL_FILE)) unlinkSync(LOCAL_FILE);
 
@@ -134,13 +148,43 @@ async function main() {
     assert(err instanceof Error && err.message === "Select a date", "missing date should fail");
   }
 
+  try {
+    await submitOrder({
+      fulfillment: "pickup",
+      lang: "en",
+      customerName: "Self Check",
+      customerEmail: "self-check@example.com",
+      phone: "4165550100",
+      wantedOn: localDateIso(),
+      foodCents: 700,
+      shippingCents: 0,
+      totalCents: 700,
+      items: [
+        {
+          lineId: "too-soon",
+          productId: "prod-choc-chip",
+          slug: "brown-butter-chocolate-chip",
+          nameEn: "Brown butter chocolate chip",
+          nameEs: "Chip de chocolate",
+          qty: 1,
+          unitPriceCents: 700,
+          imageUrl: "",
+          optionsJson: {},
+        },
+      ],
+    });
+    throw new Error("Expected submit with today to fail");
+  } catch (err) {
+    assert(err instanceof Error && err.message === "Order date too soon", "today should fail server validation");
+  }
+
   const result = await submitOrder({
     fulfillment: "ship",
     lang: "en",
     customerName: "Self Check",
     customerEmail: "self-check@example.com",
     phone: "4165550100",
-    wantedOn: "2026-10-02",
+    wantedOn: okDate,
     shipStreet: "100 Main St",
     shipCity: "Vancouver",
     shipProvince: "BC",
@@ -192,7 +236,7 @@ async function main() {
     foodCents: 1890,
     shippingCents: 0,
     totalCents: 1890,
-    wantedOn: "2026-10-02",
+    wantedOn: okDate,
     promoCode: "sweet10",
     items: [
       {

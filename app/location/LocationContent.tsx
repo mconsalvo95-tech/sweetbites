@@ -23,8 +23,6 @@ export function LocationContent() {
         <div>
           <h2 className="font-medium text-berry">{shop.name}</h2>
           <p className="mt-2 text-coal/80">
-            {body.street}
-            <br />
             {body.cityLine}
             <br />
             {body.country}

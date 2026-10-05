@@ -1,4 +1,5 @@
 import type { Category, Product } from "./types";
+import { parseProductImages, primaryProductImage } from "./product-images";
 
 const FLAVORS = [
   { id: "fv-choc", nameEn: "Dark chocolate", nameEs: "Chocolate oscuro" },
@@ -291,7 +292,8 @@ export async function fetchCatalog(): Promise<{ categories: Category[]; products
       descriptionEn: p.description_en,
       descriptionEs: p.description_es,
       priceCents: p.price_cents,
-      imageUrl: p.image_url,
+      imageUrl: primaryProductImage(p.image_url),
+      imageUrls: parseProductImages(p.image_url),
       leadDays: p.lead_days,
       shipWeightG: p.ship_weight_g,
       shipLCm: p.ship_l_cm,

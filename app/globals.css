@@ -44,8 +44,9 @@ body::before {
 }
 
 .site-header {
-  /* h-20 + py-1, then sm:h-28 / lg:h-32 — drawer band matches the main bar */
-  height: 5.5rem;
+  /* h-16 + py-1 below sm; sm:h-28 / lg:h-32 — drawer band matches the main bar */
+  height: calc(4.75rem + env(safe-area-inset-top, 0px));
+  padding-top: env(safe-area-inset-top, 0px);
   border-bottom: 1px solid color-mix(in srgb, var(--color-berry) 16%, var(--color-blush));
   background-color: var(--color-blush);
   background-image: linear-gradient(
@@ -61,13 +62,13 @@ body::before {
 
 @media (min-width: 640px) {
   .site-header {
-    height: 7.5rem;
+    height: calc(7.5rem + env(safe-area-inset-top, 0px));
   }
 }
 
 @media (min-width: 1024px) {
   .site-header {
-    height: 8.5rem;
+    height: calc(8.5rem + env(safe-area-inset-top, 0px));
   }
 }
 

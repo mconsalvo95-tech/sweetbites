@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getLiveProductBySlug } from "@/lib/catalog";
+import { fetchCatalog, getLiveProductBySlug } from "@/lib/catalog";
 import { ProductDetail } from "./ProductDetail";
 
 export default async function ProductPage({
@@ -10,5 +10,9 @@ export default async function ProductPage({
   const { slug } = await params;
   const product = await getLiveProductBySlug(slug);
   if (!product) notFound();
-  return <ProductDetail product={product} />;
+  const { products } = await fetchCatalog();
+  const others = products.filter((item) => item.id !== product.id);
+  const sameCategory = others.filter((item) => item.categoryId === product.categoryId);
+  const more = (sameCategory.length ? sameCategory : others).slice(0, 4);
+  return <ProductDetail product={product} more={more} />;
 }

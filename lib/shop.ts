@@ -12,7 +12,7 @@ export const shop = {
   phoneTel: "tel:+14165550100",
   whatsapp: "https://wa.me/14165550100",
   instagram: "https://www.instagram.com/sweetbites.rd/",
-  facebook: "https://www.facebook.com/sweetbites.rd",
+  facebook: "https://www.facebook.com/sweetbitesreddeer",
   mapsUrl:
     "https://www.google.com/maps/search/?api=1&query=195+Lougheed+Close,+Red+Deer,+AB+T4R+3G7",
 } as const;
@@ -36,6 +36,18 @@ export function localDateIso(d = new Date()) {
 }
 
 export const WANTED_ON_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Earliest selectable order date: today + 2 local calendar days (same-day / next-day blocked). */
+export function minWantedOnIso(d = new Date()): string {
+  const local = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  local.setDate(local.getDate() + 2);
+  return localDateIso(local);
+}
+
+export function isAllowedWantedOn(iso: string, d = new Date()): boolean {
+  if (!WANTED_ON_RE.test(iso)) return false;
+  return iso >= minWantedOnIso(d);
+}
 
 export function wantedNote(
   fulfillment: "pickup" | "ship",

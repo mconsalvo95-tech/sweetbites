@@ -35,6 +35,8 @@ export type Product = {
   descriptionEs: string;
   priceCents: number;
   imageUrl: string;
+  /** Parsed from DB `image_url` (plain URL or JSON array). */
+  imageUrls?: string[];
   leadDays: number;
   shipWeightG: number;
   shipLCm: number;

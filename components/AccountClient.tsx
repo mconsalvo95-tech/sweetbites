@@ -13,7 +13,6 @@ const TABS = [
   { id: "orders", labelEn: "Orders", labelEs: "Pedidos" },
   { id: "wholesale", labelEn: "Wholesale", labelEs: "Mayoreo" },
   { id: "information", labelEn: "Information", labelEs: "Información" },
-  { id: "payment", labelEn: "Payment methods", labelEs: "Métodos de pago" },
   { id: "addresses", labelEn: "Addresses", labelEs: "Direcciones" },
   { id: "security", labelEn: "Security", labelEs: "Seguridad" },
   { id: "notifications", labelEn: "Notifications", labelEs: "Notificaciones" },
@@ -38,7 +37,9 @@ export function AccountClient() {
   const searchParams = useSearchParams();
   const { user, profile, loading, configured, updateProfile, signOut } = useAuth();
 
-  const tab = (searchParams.get("tab") as TabId | null) ?? "orders";
+  const tabParam = searchParams.get("tab");
+  const tab: TabId =
+    TABS.some((item) => item.id === tabParam) ? (tabParam as TabId) : "orders";
   const setTab = useCallback(
     (next: TabId) => {
       router.replace(`/account?tab=${next}`, { scroll: false });
@@ -335,15 +336,6 @@ export function AccountClient() {
               {infoSaving ? t("Saving…", "Guardando…", lang) : t("Save", "Guardar", lang)}
             </button>
           </form>
-        )}
-
-        {tab === "payment" && (
-          <div>
-            <h2 className="text-lg font-semibold text-coal">{t("Payment methods", "Métodos de pago", lang)}</h2>
-            <p className="mt-4 text-sm text-coal/60">
-              {t("Pay by card at checkout on Square. Saved cards are not stored here.", "Paga con tarjeta en Square al confirmar el pedido. Aquí no se guardan tarjetas.", lang)}
-            </p>
-          </div>
         )}
 
         {tab === "addresses" && (

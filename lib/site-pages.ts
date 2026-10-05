@@ -62,8 +62,8 @@ export const DEFAULT_FAQ_ITEMS: FaqItem[] = [
   {
     qEn: "How does pickup work?",
     qEs: "¿Cómo funciona la recogida?",
-    aEn: "Order online, choose pickup, and we'll text when your box is ready at 195 Lougheed Close, Red Deer.",
-    aEs: "Pide en línea, elige recoger, y te avisaremos cuando tu caja esté lista en 195 Lougheed Close, Red Deer.",
+    aEn: "Order online, choose pickup, and we'll text when your box is ready in Red Deer.",
+    aEs: "Pide en línea, elige recoger, y te avisaremos cuando tu caja esté lista en Red Deer.",
   },
   {
     qEn: "Do you deliver locally?",
@@ -95,13 +95,13 @@ export const SITE_PAGE_DEFAULTS: Record<SitePageSlug, Record<string, unknown>> =
   about: {
     photo_url: "",
     p1_en:
-      "Hi, I'm the baker behind Sweetbites. I started this kitchen because I missed the kind of cookies my abuela used to make — crisp edges, soft centers, and nothing from a mix.",
+      "Meet the heart and soul behind Sweet Bites. Rocio and Daniela are a mother-daughter team who share a love for baking.",
     p1_es:
-      "Hola, soy la panadera detrás de Sweetbites. Abrí esta cocina porque extrañaba las galletas que hacía mi abuela — bordes crujientes, centro suave, nada de mezclas.",
+      "Conoce el corazón de Sweet Bites. Rocio y Daniela son un equipo de madre e hija que comparten el amor por la repostería.",
     p2_en:
-      "Every batch is small, every order is made to order, and every box leaves the oven the same day you pick it up or we deliver it across Red Deer.",
+      "We moved to Canada in 2001 from Colombia. A trip to Argentina introduced us to alfajores: a shortbread cookie filled with dulce de leche, with coconut flakes on the side. Rocio learned to make them, and they became one of the staples at Sweet Bites. We can't wait to see what the future holds for Sweet Bites.",
     p2_es:
-      "Cada lote es pequeño, cada pedido se hace al momento, y cada caja sale del horno el mismo día que la recoges o te la entregamos en Red Deer.",
+      "Nos mudamos a Canadá en 2001 desde Colombia. Un viaje a Argentina nos presentó los alfajores: una galleta de manteca rellena de dulce de leche, con coco rallado al lado. Rocio aprendió a prepararlos y se convirtieron en uno de los clásicos de Sweet Bites. No vemos la hora de descubrir qué nos depara el futuro para Sweet Bites.",
   } satisfies AboutBody,
   faq: { items: DEFAULT_FAQ_ITEMS } satisfies FaqBody,
   events: {
