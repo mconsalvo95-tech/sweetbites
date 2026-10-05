@@ -94,19 +94,19 @@ export function Header() {
             >
               <Link
                 href="/order"
-                className="whitespace-nowrap text-xs font-medium text-white/90 transition-colors hover:text-white lg:text-sm"
+                className="whitespace-nowrap text-sm font-medium text-white/90 transition-colors hover:text-white lg:text-base"
               >
                 {t("Order", "Pedir", lang)}
               </Link>
               <Link
                 href="/about"
-                className="whitespace-nowrap text-xs font-medium text-white/90 transition-colors hover:text-white lg:text-sm"
+                className="whitespace-nowrap text-sm font-medium text-white/90 transition-colors hover:text-white lg:text-base"
               >
                 {t("About", "Nosotros", lang)}
               </Link>
               <Link
                 href="/contact"
-                className="whitespace-nowrap text-xs font-medium text-white/90 transition-colors hover:text-white lg:text-sm"
+                className="whitespace-nowrap text-sm font-medium text-white/90 transition-colors hover:text-white lg:text-base"
               >
                 {t("Contact", "Contacto", lang)}
               </Link>
