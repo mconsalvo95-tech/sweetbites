@@ -118,7 +118,11 @@ export function HomeSlider({ slides, variant, ariaLabelEn, ariaLabelEs }: HomeSl
           {slides.map((slide, i) => (
             <article
               key={i}
-              className="relative aspect-[16/7] min-h-[220px] w-full min-w-full shrink-0 basis-full sm:min-h-[280px]"
+              className={`relative w-full min-w-full shrink-0 basis-full ${
+                variant === "promo"
+                  ? "aspect-[16/10] max-h-[260px] min-h-[220px] sm:aspect-[16/7] sm:max-h-none sm:min-h-[280px]"
+                  : "aspect-[16/7] min-h-[220px] sm:min-h-[280px]"
+              }`}
               aria-hidden={i !== index}
             >
               <Image
@@ -131,25 +135,29 @@ export function HomeSlider({ slides, variant, ariaLabelEn, ariaLabelEs }: HomeSl
                 priority={i === 0}
               />
               {variant === "promo" ? (
-                <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/55 to-transparent" />
+                <div className="absolute inset-x-0 bottom-0 h-3/5 bg-gradient-to-t from-black/75 to-transparent sm:h-1/2 sm:from-black/55" />
               ) : (
                 <div className="absolute inset-0 bg-gradient-to-r from-berry/80 via-berry/55 to-blush/40" />
               )}
 
-              <div className={`absolute inset-0 flex flex-col justify-end px-12 pb-10 pt-5 sm:px-8 sm:pb-16 sm:pt-8 ${
-                variant === "promo" ? "items-center text-center sm:items-start sm:text-left" : ""
-              }`}>
+              <div
+                className={`absolute inset-0 flex flex-col justify-end pb-10 pt-5 sm:pb-16 sm:pt-8 ${
+                  variant === "promo"
+                    ? "items-start px-14 text-left sm:px-8"
+                    : "px-12 sm:px-8"
+                }`}
+              >
                 {variant === "promo" ? (
-                  <>
+                  <div className="w-full min-w-0 max-w-full">
                     {(slide.tagEn || slide.tagEs) && (
                       <span className="mb-2 inline-flex w-fit rounded-full bg-mint px-3 py-1 text-xs font-semibold uppercase tracking-wide text-coal">
                         {t(slide.tagEn ?? "", slide.tagEs ?? "", lang)}
                       </span>
                     )}
-                    <h3 className="font-display text-2xl uppercase leading-tight text-white sm:text-3xl">
+                    <h3 className="max-w-full break-words font-display text-xl uppercase leading-tight text-white sm:text-3xl">
                       {t(slide.titleEn ?? "", slide.titleEs ?? "", lang)}
                     </h3>
-                    <p className="mt-2 max-w-xl text-sm text-white/90 sm:text-base">
+                    <p className="mt-2 max-w-full break-words text-sm text-white/90 sm:max-w-xl sm:text-base">
                       {t(slide.offerEn ?? "", slide.offerEs ?? "", lang)}
                     </p>
                     {slide.ctaHref && (
@@ -162,7 +170,7 @@ export function HomeSlider({ slides, variant, ariaLabelEn, ariaLabelEs }: HomeSl
                         {t("Order now", "Pedir ahora", lang)}
                       </Link>
                     )}
-                  </>
+                  </div>
                 ) : (
                   <>
                     <p className="max-w-2xl text-lg font-medium leading-snug text-white sm:text-xl">
