@@ -10,7 +10,11 @@ import { customerOrderEmail, ownerOrderEmail } from "../lib/order-email";
 import { canCustomerCancel } from "../lib/types";
 import { expectedSquareSignature, verifySquareSignature } from "../lib/square";
 import { parsePriceQuotes } from "../lib/shipping";
-import { parseProductImages, serializeProductImages } from "../lib/product-images";
+import {
+  parseProductImages,
+  primaryProductImage,
+  serializeProductImages,
+} from "../lib/product-images";
 import { isAllowedWantedOn, localDateIso, minWantedOnIso, wantedNote, wantedOnFromNotes } from "../lib/shop";
 
 const LOCAL_FILE = join(process.cwd(), ".local-orders.json");
@@ -23,6 +27,19 @@ async function main() {
   const okDate = minWantedOnIso();
   assert(isAllowedWantedOn(okDate), "min wanted date should be allowed");
   assert(!isAllowedWantedOn(localDateIso()), "today should not be allowed for orders");
+
+  const fixedToday = new Date(2026, 9, 1);
+  assert(minWantedOnIso(fixedToday) === "2026-10-03", "Oct 1 + 2 days is Oct 3 earliest");
+  assert(!isAllowedWantedOn("2026-10-01", fixedToday), "same-day order date should fail");
+  assert(!isAllowedWantedOn("2026-10-02", fixedToday), "next-day order date should fail");
+  assert(isAllowedWantedOn("2026-10-03", fixedToday), "earliest allowed date should pass");
+  assert(!isAllowedWantedOn("soon", fixedToday), "non-ISO date string should fail");
+
+  const plainImg = "https://a.test/1.jpg";
+  assert(
+    parseProductImages(plainImg).length === 1 && parseProductImages(plainImg)[0] === plainImg,
+    "plain URL should parse as one image",
+  );
   assert(
     serializeProductImages(["https://a.test/1.jpg"]) === "https://a.test/1.jpg",
     "single image should stay plain URL",
@@ -30,6 +47,19 @@ async function main() {
   assert(
     parseProductImages('["https://a.test/1.jpg","https://a.test/2.jpg"]').length === 2,
     "JSON array images should parse",
+  );
+  const twoUrls = ["https://a.test/1.jpg", "https://a.test/2.jpg"];
+  assert(
+    serializeProductImages(twoUrls) === JSON.stringify(twoUrls),
+    "two images should serialize as JSON array",
+  );
+  assert(parseProductImages("[not valid json").length === 1, "garbage JSON array should not throw");
+  assert(parseProductImages("[not valid json")[0] === "[not valid json", "garbage JSON should fall back to raw string");
+  assert(parseProductImages("[]").length === 0, "empty JSON array should parse to no images");
+  assert(
+    primaryProductImage('["https://a.test/first.jpg","https://a.test/second.jpg"]') ===
+      "https://a.test/first.jpg",
+    "primary image should be the first parsed URL",
   );
 
   const parsed = parsePriceQuotes([

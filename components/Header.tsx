@@ -76,8 +76,8 @@ export function Header() {
   return (
     <>
       <header className="site-header sticky top-0 z-50">
-        <div className="grid h-full w-full grid-cols-[1fr_auto_1fr] items-center px-2 py-1 sm:px-3">
-          <div className="flex min-w-0 items-center justify-self-start">
+        <div className="grid h-full w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 px-2 py-1 sm:px-3">
+          <div className="flex shrink-0 items-center">
             <button
               type="button"
               onClick={() => setDrawerOpen(true)}
@@ -113,18 +113,18 @@ export function Header() {
             </nav>
           </div>
 
-          <Link href="/" className="justify-self-center">
+          <Link href="/" className="mx-auto block min-w-0 max-w-full">
             <Image
               src="/logos/wordmark-sticker-2.png"
               alt="Sweetbites"
               width={836}
               height={482}
-              className="h-16 w-auto max-w-[44vw] sm:h-28 sm:max-w-none lg:h-32"
+              className="mx-auto h-14 w-auto max-w-full object-contain sm:h-28 lg:h-32"
               priority
             />
           </Link>
 
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex shrink-0 items-center justify-end gap-1 sm:gap-2">
             <AccountIcon />
             <CartIcon />
             <LanguageToggle />
