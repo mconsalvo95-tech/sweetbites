@@ -68,8 +68,10 @@ export const DEFAULT_FAQ_ITEMS: FaqItem[] = [
   {
     qEn: "Do you deliver locally?",
     qEs: "¿Hacen entrega local?",
-    aEn: "Yes — Red Deer-area delivery is a flat $6. Enter your address at checkout.",
-    aEs: "Sí — entrega en Red Deer por $6 fijo. Ingresa tu dirección al pagar.",
+    aEn:
+      "Delivery Available 🚗💨\n\nWe do offer local delivery! Delivery availability depends on the date, time, and location of your order. Please contact us to confirm delivery options and any applicable delivery fees.",
+    aEs:
+      "Entrega disponible 🚗💨\n\nSí hacemos entrega local. La disponibilidad depende de la fecha, la hora y la ubicación de tu pedido. Contáctanos para confirmar las opciones de entrega y los costos aplicables.",
   },
   {
     qEn: "Can you ship across Canada?",

@@ -7,7 +7,6 @@ import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/lang";
 import { formatCad, t } from "@/lib/format";
 import { customerOrderStatusLabel } from "@/lib/order-status";
-import { canCustomerCancel } from "@/lib/types";
 import { getSupabaseBrowser } from "@/lib/supabase-browser";
 
 const TABS = [
@@ -16,7 +15,6 @@ const TABS = [
   { id: "information", labelEn: "Information", labelEs: "Información" },
   { id: "addresses", labelEn: "Addresses", labelEs: "Direcciones" },
   { id: "security", labelEn: "Security", labelEs: "Seguridad" },
-  { id: "notifications", labelEn: "Notifications", labelEs: "Notificaciones" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -50,7 +48,6 @@ export function AccountClient() {
 
   const [orders, setOrders] = useState<UserOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
-  const [cancelBusy, setCancelBusy] = useState<string | null>(null);
 
   const [displayName, setDisplayName] = useState("");
   const [phone, setPhone] = useState("");
@@ -69,9 +66,6 @@ export function AccountClient() {
   const [pwMsg, setPwMsg] = useState("");
   const [pwSaving, setPwSaving] = useState(false);
 
-  const [newsletter, setNewsletter] = useState(false);
-  const [newsSaving, setNewsSaving] = useState(false);
-
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
   }, [loading, user, router]);
@@ -84,7 +78,6 @@ export function AccountClient() {
     setCity(profile.address_city ?? "");
     setProvince(profile.address_province ?? "");
     setPostal(profile.address_postal ?? "");
-    setNewsletter(profile.newsletter);
   }, [profile]);
 
   useEffect(() => {
@@ -168,32 +161,6 @@ export function AccountClient() {
     }
   };
 
-  const toggleNewsletter = async () => {
-    const next = !newsletter;
-    setNewsletter(next);
-    setNewsSaving(true);
-    const result = await updateProfile({ newsletter: next });
-    setNewsSaving(false);
-    if (result.error) setNewsletter(!next);
-  };
-
-  const cancelOrder = async (id: string) => {
-    const supabase = getSupabaseBrowser();
-    if (!supabase) return;
-    const ok = window.confirm(
-      t("Cancel this order? The shop will stop preparing it.", "¿Cancelar este pedido? La tienda dejará de prepararlo.", lang),
-    );
-    if (!ok) return;
-    setCancelBusy(id);
-    const { error } = await supabase.rpc("cancel_own_order", { order_id: id });
-    setCancelBusy(null);
-    if (error) {
-      window.alert(error.message);
-      return;
-    }
-    setOrders((rows) => rows.map((row) => (row.id === id ? { ...row, status: "cancelled" } : row)));
-  };
-
   const role = profile?.role ?? "customer";
 
   return (
@@ -254,25 +221,11 @@ export function AccountClient() {
                         {order.fulfillment}
                       </p>
                     </div>
-                    <div className="flex items-center gap-3 text-right">
-                      <div>
-                        <p className="font-medium">{formatCad(order.total_cents)}</p>
-                        <p className="text-xs text-coal/50">
-                          {customerOrderStatusLabel(order.status, lang)}
-                        </p>
-                      </div>
-                      {canCustomerCancel(order.status) && (
-                        <button
-                          type="button"
-                          disabled={cancelBusy === order.id}
-                          onClick={() => void cancelOrder(order.id)}
-                          className="text-sm text-coal/50 hover:text-berry hover:underline disabled:opacity-50"
-                        >
-                          {cancelBusy === order.id
-                            ? t("Cancelling…", "Cancelando…", lang)
-                            : t("Cancel", "Cancelar", lang)}
-                        </button>
-                      )}
+                    <div className="text-right">
+                      <p className="font-medium">{formatCad(order.total_cents)}</p>
+                      <p className="text-xs text-coal/50">
+                        {customerOrderStatusLabel(order.status, lang)}
+                      </p>
                     </div>
                   </li>
                 ))}
@@ -417,26 +370,6 @@ export function AccountClient() {
           </div>
         )}
 
-        {tab === "notifications" && (
-          <div>
-            <h2 className="text-lg font-semibold text-coal">{t("Notifications", "Notificaciones", lang)}</h2>
-            <label className="mt-4 flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-blush/40 p-4">
-              <div>
-                <p className="font-medium text-coal">{t("Newsletter", "Boletín", lang)}</p>
-                <p className="text-sm text-coal/60">
-                  {t("Get updates on new treats and promos.", "Recibe novedades sobre postres y promos.", lang)}
-                </p>
-              </div>
-              <input
-                type="checkbox"
-                checked={newsletter}
-                disabled={newsSaving}
-                onChange={toggleNewsletter}
-                className="h-5 w-5 accent-berry"
-              />
-            </label>
-          </div>
-        )}
       </div>
     </div>
   );

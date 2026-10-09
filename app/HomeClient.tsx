@@ -61,7 +61,7 @@ export function HomePageContent({
           <h2 className="font-display text-lg uppercase text-coal">
             {t("Follow us", "Síguenos", lang)}
           </h2>
-          <SocialLinks lang={lang} className="mt-4" />
+          <SocialLinks lang={lang} className="mt-4 justify-center" />
           <div className="mt-6">
             <p className="mb-2 text-sm font-medium text-coal">
               {t("Get our newest updates", "Recibe nuestras novedades", lang)}

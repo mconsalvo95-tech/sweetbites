@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, Fragment } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/lang";
 import { formatCad, t } from "@/lib/format";
@@ -115,6 +115,19 @@ function orderItemSummary(row: OrderRow, lang: "en" | "es") {
       return `${item.qty}× ${name || item.product_id || ""}`;
     })
     .join(", ");
+}
+
+function orderSearchHaystack(row: OrderRow): string {
+  const parts: string[] = [
+    row.id,
+    row.customer_name,
+    row.customer_email ?? "",
+    row.phone,
+  ];
+  for (const item of row.order_items ?? []) {
+    parts.push(item.name_en, item.name_es, item.products?.name_en ?? "", item.products?.name_es ?? "");
+  }
+  return parts.filter(Boolean).join(" ").toLowerCase();
 }
 
 function csvCell(value: string) {
@@ -359,6 +372,7 @@ export function AdminClient() {
     ? (tabParam as AdminTab)
     : "orders";
   const [orderFilter, setOrderFilter] = useState<OrderTabStatus>("pending");
+  const [orderSearch, setOrderSearch] = useState("");
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(() => new Set());
   const selectAllOrdersRef = useRef<HTMLInputElement>(null);
   const [promos, setPromos] = useState<PromoRow[]>([]);
@@ -441,6 +455,7 @@ export function AdminClient() {
 
   useEffect(() => {
     setSelectedOrderIds(new Set());
+    setOrderSearch("");
   }, [orderFilter]);
 
   const visibleOrderIds = orders
@@ -455,6 +470,17 @@ export function AdminClient() {
     const el = selectAllOrdersRef.current;
     if (el) el.indeterminate = someVisibleSelected;
   }, [someVisibleSelected, orderFilter, visibleOrderIds.length]);
+
+  const orderSearchQuery = orderSearch.trim().toLowerCase();
+  const statusOrders = useMemo(
+    () => orders.filter((row) => row.status === orderFilter),
+    [orders, orderFilter],
+  );
+  const displayedOrders = useMemo(() => {
+    if (!orderSearchQuery) return statusOrders;
+    return statusOrders.filter((row) => orderSearchHaystack(row).includes(orderSearchQuery));
+  }, [statusOrders, orderSearchQuery]);
+  const visibleOrders = statusOrders;
 
   useEffect(() => {
     if (profile?.role !== "admin") return;
@@ -908,8 +934,6 @@ export function AdminClient() {
     await bulkUpdateOrderStatuses(pending, (row) => fulfilledStatusFor(row.fulfillment));
   };
 
-  const visibleOrders = orders.filter((row) => row.status === orderFilter);
-
   const downloadVisibleOrders = () => {
     if (!visibleOrders.length) return;
     downloadOrdersExcel(visibleOrders);
@@ -981,6 +1005,13 @@ export function AdminClient() {
             );
           })}
         </div>
+        <input
+          type="search"
+          value={orderSearch}
+          onChange={(e) => setOrderSearch(e.target.value)}
+          placeholder={t("Search orders", "Buscar pedidos", lang)}
+          className={`${inputClass} max-w-md`}
+        />
         {visibleOrders.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -1023,11 +1054,13 @@ export function AdminClient() {
             )}
           </div>
         )}
-        {visibleOrders.length === 0 ? (
+        {displayedOrders.length === 0 ? (
           <p className="text-sm text-coal/60">
             {orders.length === 0
               ? t("No orders yet.", "Aún no hay pedidos.", lang)
-              : t("No orders in this list.", "No hay pedidos en esta lista.", lang)}
+              : orderSearchQuery
+                ? t("No orders match your search.", "Ningún pedido coincide con la búsqueda.", lang)
+                : t("No orders in this list.", "No hay pedidos en esta lista.", lang)}
           </p>
         ) : (
           <div className="overflow-x-auto rounded-2xl bg-white p-4 shadow-sm">
@@ -1063,7 +1096,7 @@ export function AdminClient() {
                 </tr>
               </thead>
               <tbody>
-                {visibleOrders.map((row) => {
+                {displayedOrders.map((row) => {
                   const open = openOrderId === row.id;
                   return (
                     <Fragment key={row.id}>
@@ -1181,7 +1214,31 @@ export function AdminClient() {
               </tr>
             </thead>
             <tbody>
-              {products.map((row) => (
+              {(() => {
+                const categoryIds = new Set(categories.map((c) => c.id));
+                const otherProducts = products.filter(
+                  (p) => !p.category_id || !categoryIds.has(p.category_id),
+                );
+                const menuGroups = [
+                  ...categories
+                    .map((cat) => ({
+                      key: cat.id,
+                      title: lang === "es" ? cat.name_es : cat.name_en,
+                      products: products.filter((p) => p.category_id === cat.id),
+                    }))
+                    .filter((g) => g.products.length > 0),
+                  ...(otherProducts.length
+                    ? [{ key: "other", title: t("Other", "Otros", lang), products: otherProducts }]
+                    : []),
+                ];
+                return menuGroups.map((group) => (
+                  <Fragment key={group.key}>
+                    <tr className="border-t border-blush/60 bg-blush/25">
+                      <td colSpan={5} className="py-2 font-display text-sm uppercase tracking-wide text-berry">
+                        {group.title}
+                      </td>
+                    </tr>
+                    {group.products.map((row) => (
                 <tr key={row.id} className="border-t border-blush/40">
                   <td className="py-2">
                     <p className="font-medium">{lang === "es" ? row.name_es : row.name_en}</p>
@@ -1251,7 +1308,10 @@ export function AdminClient() {
                     </button>
                   </td>
                 </tr>
-              ))}
+                    ))}
+                  </Fragment>
+                ));
+              })()}
             </tbody>
           </table>
         </div>
