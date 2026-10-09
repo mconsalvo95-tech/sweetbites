@@ -322,21 +322,21 @@ async function main() {
   assert(!canCustomerCancel("cancelled"), "Already cancelled is not cancellable");
   assert(!canCustomerCancel("done"), "Done orders are not cancellable");
 
-  assert(isMidFulfillmentStatus("completed") && isMidFulfillmentStatus("sent"));
-  assert(!isMidFulfillmentStatus("pending") && !isMidFulfillmentStatus("done"));
-  assert(fulfilledStatusFor("ship") === "sent" && fulfilledStatusFor("pickup") === "completed");
-  assert(reopenStatusFor("delivery") === "completed");
-  assert(bulkStatusForOrder("pending", "ship") === "sent");
-  assert(bulkStatusForOrder("pending", "pickup") === "completed");
-  assert(bulkStatusForOrder("completed", "ship") === "done");
-  assert(bulkStatusForOrder("done", "ship") === "sent");
-  assert(bulkStatusForOrder("cancelled", "pickup") === "pending");
-  assert(bulkOrderActionLabel("pending", "en") === "Mark selected");
-  assert(bulkOrderActionLabel("pending", "es") === "Marcar seleccionados");
-  assert(bulkOrderActionLabel("completed", "en") === "Done");
-  assert(canEraseOrdersTab("done") && canEraseOrdersTab("sent") && !canEraseOrdersTab("pending"));
-  assert(customerOrderStatusLabel("done", "en") === "Done");
-  assert(customerOrderStatusLabel("done", "es") === "Listo");
+  assert(isMidFulfillmentStatus("completed") && isMidFulfillmentStatus("sent"), "picked up and shipped are mid-fulfillment");
+  assert(!isMidFulfillmentStatus("pending") && !isMidFulfillmentStatus("done"), "pending and done are not mid-fulfillment");
+  assert(fulfilledStatusFor("ship") === "sent" && fulfilledStatusFor("pickup") === "completed", "ship marks sent, pickup marks completed");
+  assert(reopenStatusFor("delivery") === "completed", "reopen returns a delivery order to picked up");
+  assert(bulkStatusForOrder("pending", "ship") === "sent", "bulk pending ship becomes shipped");
+  assert(bulkStatusForOrder("pending", "pickup") === "completed", "bulk pending pickup becomes picked up");
+  assert(bulkStatusForOrder("completed", "ship") === "done", "bulk picked up becomes done");
+  assert(bulkStatusForOrder("done", "ship") === "sent", "bulk reopen of a ship order returns to shipped");
+  assert(bulkStatusForOrder("cancelled", "pickup") === "pending", "bulk restore returns to pending");
+  assert(bulkOrderActionLabel("pending", "en") === "Mark selected", "pending bulk label");
+  assert(bulkOrderActionLabel("pending", "es") === "Marcar seleccionados", "pending bulk label in Spanish");
+  assert(bulkOrderActionLabel("completed", "en") === "Done", "picked up bulk label");
+  assert(canEraseOrdersTab("done") && canEraseOrdersTab("sent") && !canEraseOrdersTab("pending"), "erase is allowed after fulfill, not while pending");
+  assert(customerOrderStatusLabel("done", "en") === "Done", "done label in English");
+  assert(customerOrderStatusLabel("done", "es") === "Listo", "done label in Spanish");
 
   const sqBody = '{"type":"payment.updated"}';
   const sqUrl = "https://sweetbites.shop/api/square/webhook";

@@ -125,7 +125,7 @@ function orderSearchHaystack(row: OrderRow): string {
     row.phone,
   ];
   for (const item of row.order_items ?? []) {
-    parts.push(item.name_en, item.name_es, item.products?.name_en ?? "", item.products?.name_es ?? "");
+    parts.push(item.name_en ?? "", item.name_es ?? "", item.products?.name_en ?? "", item.products?.name_es ?? "");
   }
   return parts.filter(Boolean).join(" ").toLowerCase();
 }
