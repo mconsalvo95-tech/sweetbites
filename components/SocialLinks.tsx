@@ -30,7 +30,7 @@ function FacebookIcon() {
       aria-hidden
     >
       <path
-        transform="translate(0.5 -2)"
+        transform="translate(2.5 -2)"
         d="M14 8h3V4h-3c-2.8 0-5 2.2-5 5v2H6v4h3v9h4v-9h3.2l.8-4H13V9c0-.6.4-1 1-1z"
       />
     </svg>

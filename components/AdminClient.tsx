@@ -1206,7 +1206,7 @@ export function AdminClient() {
           <table className="w-full min-w-[480px] text-left text-sm">
             <thead>
               <tr className="text-coal/60">
-                <th className="pb-2">{t("Product", "Producto", lang)}</th>
+                <th className="px-3 pb-2">{t("Product", "Producto", lang)}</th>
                 <th className="pb-2">{t("Image", "Imagen", lang)}</th>
                 <th className="pb-2">{t("Price $", "Precio $", lang)}</th>
                 <th className="pb-2">{t("On menu", "En menú", lang)}</th>
@@ -1234,13 +1234,13 @@ export function AdminClient() {
                 return menuGroups.map((group) => (
                   <Fragment key={group.key}>
                     <tr className="border-t border-blush/60 bg-blush/25">
-                      <td colSpan={5} className="py-2 font-display text-sm uppercase tracking-wide text-berry">
+                      <td colSpan={5} className="px-3 py-2 font-display text-sm uppercase tracking-wide text-berry">
                         {group.title}
                       </td>
                     </tr>
                     {group.products.map((row) => (
                 <tr key={row.id} className="border-t border-blush/40">
-                  <td className="py-2">
+                  <td className="px-3 py-2">
                     <p className="font-medium">{lang === "es" ? row.name_es : row.name_en}</p>
                     {lang === "es" ? <p className="text-xs text-coal/50">{row.name_en}</p> : null}
                   </td>
