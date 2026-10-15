@@ -24,9 +24,9 @@ export function CategoryChips({ categories, activeSlug, lang, onSelect }: Props)
 
   return (
 
-    <div className="sticky top-[57px] z-30 -mx-4 border-b border-blush/40 bg-white/95 px-4 py-3 backdrop-blur-sm">
+    <div className="category-chips-bar sticky z-30 -mx-4 border-b border-blush/40 bg-white/95 px-4 py-3 backdrop-blur-sm">
 
-      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+      <div className="flex gap-2 overflow-x-auto px-1 py-3 scrollbar-hide">
 
         {categories.map((cat) => {
 

@@ -54,7 +54,8 @@ export async function getWeeklyOffers(): Promise<HomeSlide[]> {
     .eq("active", true)
     .order("sort");
 
-  if (error || !data?.length) return FALLBACK_PROMO_SLIDES;
+  if (error) return FALLBACK_PROMO_SLIDES;
+  if (!data?.length) return [];
 
   return data.map((row) => ({
     imageUrl: row.image_url,

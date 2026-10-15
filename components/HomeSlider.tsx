@@ -135,7 +135,7 @@ export function HomeSlider({ slides, variant, ariaLabelEn, ariaLabelEs }: HomeSl
                 priority={i === 0}
               />
               {variant === "promo" ? (
-                <div className="absolute inset-x-0 bottom-0 h-3/5 bg-gradient-to-t from-black/75 to-transparent sm:h-1/2 sm:from-black/55" />
+                <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black via-black/80 to-transparent sm:from-black/55 sm:via-transparent" />
               ) : (
                 <div className="absolute inset-0 bg-gradient-to-r from-berry/80 via-berry/55 to-blush/40" />
               )}
@@ -154,10 +154,10 @@ export function HomeSlider({ slides, variant, ariaLabelEn, ariaLabelEs }: HomeSl
                         {t(slide.tagEn ?? "", slide.tagEs ?? "", lang)}
                       </span>
                     )}
-                    <h3 className="max-w-full break-words font-display text-xl uppercase leading-tight text-white sm:text-3xl">
+                    <h3 className="max-w-full break-words font-display text-lg uppercase leading-tight text-white sm:text-3xl">
                       {t(slide.titleEn ?? "", slide.titleEs ?? "", lang)}
                     </h3>
-                    <p className="mt-2 max-w-full break-words text-sm text-white/90 sm:max-w-xl sm:text-base">
+                    <p className="mt-1.5 max-w-full break-words text-sm text-white/90 line-clamp-2 sm:mt-2 sm:max-w-xl sm:text-base sm:line-clamp-none">
                       {t(slide.offerEn ?? "", slide.offerEs ?? "", lang)}
                     </p>
                     {slide.ctaHref && (

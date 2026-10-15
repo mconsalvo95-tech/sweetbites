@@ -24,11 +24,22 @@ export default function OrderPage() {
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
   const grouped = useMemo(() => {
-    return categories.map((cat) => ({
-      category: cat,
-      products: products.filter((p) => p.categoryId === cat.id),
-    }));
+    return categories
+      .map((cat) => ({
+        category: cat,
+        products: products.filter((p) => p.categoryId === cat.id),
+      }))
+      .filter((g) => g.products.length > 0);
   }, [categories, products]);
+
+  const visibleCategories = useMemo(() => grouped.map((g) => g.category), [grouped]);
+
+  useEffect(() => {
+    if (!visibleCategories.length) return;
+    if (!visibleCategories.some((c) => c.slug === activeSlug)) {
+      setActiveSlug(visibleCategories[0].slug);
+    }
+  }, [visibleCategories, activeSlug]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -61,11 +72,11 @@ export default function OrderPage() {
         {t("Menu", "Menú", lang)}
       </h1>
       <p className="mt-1 text-sm text-coal/70">
-        {t("Tap a item to customize", "Toca un producto para personalizar", lang)}
+        {t("Tap an item to customize", "Toca un producto para personalizar", lang)}
       </p>
 
       <CategoryChips
-        categories={categories}
+        categories={visibleCategories}
         activeSlug={activeSlug}
         lang={lang}
         onSelect={scrollTo}
@@ -79,7 +90,7 @@ export default function OrderPage() {
             ref={(el) => {
               sectionRefs.current[category.slug] = el;
             }}
-            className="scroll-mt-32"
+            className="menu-category-scroll"
           >
             <h2 className="font-display gloss mb-3 rounded-xl bg-berry px-4 py-2.5 text-center text-lg uppercase text-white">
               {lang === "es" ? category.nameEs : category.nameEn}

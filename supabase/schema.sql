@@ -361,6 +361,16 @@ drop policy if exists "Admins delete products" on products;
 create policy "Admins delete products" on products
   for delete using (public.is_admin());
 
+drop policy if exists "Admins insert categories" on categories;
+create policy "Admins insert categories" on categories
+  for insert with check (public.is_admin());
+drop policy if exists "Admins update categories" on categories;
+create policy "Admins update categories" on categories
+  for update using (public.is_admin()) with check (public.is_admin());
+drop policy if exists "Admins delete categories" on categories;
+create policy "Admins delete categories" on categories
+  for delete using (public.is_admin());
+
 drop policy if exists "Admins read orders" on orders;
 create policy "Admins read orders" on orders
   for select using (public.is_admin());

@@ -30,7 +30,7 @@ function FacebookIcon() {
       aria-hidden
     >
       <path
-        transform="translate(2.5 -2)"
+        transform="translate(0.5 -2)"
         d="M14 8h3V4h-3c-2.8 0-5 2.2-5 5v2H6v4h3v9h4v-9h3.2l.8-4H13V9c0-.6.4-1 1-1z"
       />
     </svg>
@@ -44,7 +44,7 @@ export function SocialLinks({ lang, className = "" }: { lang: Lang; className?: 
         href={shop.instagram}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex h-10 w-10 items-center justify-center rounded-full bg-berry text-white transition-transform hover:scale-105 active:scale-95"
+        className="flex h-10 w-10 origin-center items-center justify-center rounded-full bg-berry text-white transition-transform hover:scale-105 active:scale-95"
         aria-label={t("Instagram", "Instagram", lang)}
       >
         <InstagramIcon />
@@ -53,7 +53,7 @@ export function SocialLinks({ lang, className = "" }: { lang: Lang; className?: 
         href={shop.facebook}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex h-10 w-10 items-center justify-center rounded-full bg-[#1877F2] text-white transition-transform hover:scale-105 active:scale-95"
+        className="flex h-10 w-10 origin-center items-center justify-center rounded-full bg-[#1877F2] text-white transition-transform hover:scale-105 active:scale-95"
         aria-label={t("Facebook", "Facebook", lang)}
       >
         <FacebookIcon />
@@ -62,7 +62,7 @@ export function SocialLinks({ lang, className = "" }: { lang: Lang; className?: 
         href={shop.whatsapp}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex h-10 w-10 items-center justify-center rounded-full bg-[#25D366] text-white transition-transform hover:scale-105 active:scale-95"
+        className="flex h-10 w-10 origin-center items-center justify-center rounded-full bg-[#25D366] text-white transition-transform hover:scale-105 active:scale-95"
         aria-label={t("WhatsApp", "WhatsApp", lang)}
       >
         <WhatsAppIcon />

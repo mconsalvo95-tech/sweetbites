@@ -8,6 +8,7 @@ import { useLang } from "@/lib/lang";
 import { formatCad, t } from "@/lib/format";
 import { parseProductImages, serializeProductImages } from "@/lib/product-images";
 import { DEFAULT_REVIEW_IMAGE, FALLBACK_REVIEW_ITEMS, type ReviewItem } from "@/lib/reviews";
+import { FALLBACK_PROMO_SLIDES } from "@/lib/weekly-offers";
 import { getSupabaseBrowser } from "@/lib/supabase-browser";
 import type { PromoKind } from "@/lib/promos";
 import {
@@ -316,6 +317,29 @@ function linkedProduct(offer: OfferRow, products: ProductRow[]) {
   return slug ? products.find((p) => p.slug === slug) : undefined;
 }
 
+function fallbackSlidesToOfferRows(productRows: ProductRow[]): OfferRow[] {
+  return FALLBACK_PROMO_SLIDES.map((slide, i) => {
+    const id = slugify(slide.titleEn ?? "") || `offer-${i + 1}`;
+    const row: OfferRow = {
+      id,
+      sort: i + 1,
+      active: true,
+      image_url: slide.imageUrl ?? "",
+      tag_en: slide.tagEn ?? null,
+      tag_es: slide.tagEs ?? null,
+      title_en: slide.titleEn ?? "",
+      title_es: slide.titleEs ?? "",
+      offer_en: slide.offerEn ?? "",
+      offer_es: slide.offerEs ?? "",
+      cta_href: slide.ctaHref ?? "/order",
+      category_id: "cat-cookies",
+      priceDraft: "",
+    };
+    const p = linkedProduct(row, productRows);
+    return { ...row, priceDraft: p ? dollars(p.price_cents) : "" };
+  });
+}
+
 function dollars(cents: number) {
   return (cents / 100).toFixed(2);
 }
@@ -361,7 +385,7 @@ async function uploadAdminImage(file: File) {
   return data.publicUrl;
 }
 
-type CategoryRow = { id: string; name_en: string; name_es: string };
+type CategoryRow = { id: string; name_en: string; name_es: string; slug: string; sort: number };
 
 export function AdminClient() {
   const { lang } = useLang();
@@ -379,15 +403,18 @@ export function AdminClient() {
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [newNameEn, setNewNameEn] = useState("");
-  const [newNameEs, setNewNameEs] = useState("");
   const [newCat, setNewCat] = useState("cat-cookies");
   const [newPrice, setNewPrice] = useState("");
   const [newImage, setNewImage] = useState("/test-images/swb-banner.png");
   const [newDescEn, setNewDescEn] = useState("");
+  const [newGroupNameEn, setNewGroupNameEn] = useState("");
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [openOrderId, setOpenOrderId] = useState<string | null>(null);
   const [eraseArmed, setEraseArmed] = useState(false);
+  const [removeCategoryArmedId, setRemoveCategoryArmedId] = useState<string | null>(null);
+  const [addProductError, setAddProductError] = useState("");
   const [offers, setOffers] = useState<OfferRow[]>([]);
+  const [offersVirtual, setOffersVirtual] = useState(false);
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [draftReview, setDraftReview] = useState<ReviewItem>(emptyReview);
   const [status, setStatus] = useState("");
@@ -420,7 +447,7 @@ export function AdminClient() {
           )
           .order("created_at", { ascending: false })
           .limit(50),
-        supabase.from("categories").select("id, name_en, name_es").order("sort"),
+        supabase.from("categories").select("id, name_en, name_es, slug, sort").order("sort"),
       ]);
     const productRows = ((productData as ProductRow[]) ?? []).map((row) => ({
       ...row,
@@ -429,17 +456,28 @@ export function AdminClient() {
     setPromos((promoData as PromoRow[]) ?? []);
     setProducts(productRows);
     const savedReviews = (reviewPage?.body as { items?: ReviewItem[] } | null)?.items;
-    setReviews(savedReviews?.length ? savedReviews : FALLBACK_REVIEW_ITEMS.map((row) => ({ ...row })));
-    setOffers(
-      ((offerData as OfferRow[]) ?? []).map((o) => {
-        const p = linkedProduct(o, productRows);
-        return {
-          ...o,
-          priceDraft: p ? dollars(p.price_cents) : "",
-          category_id: p?.category_id ?? "cat-cookies",
-        };
-      }),
+    setReviews(
+      Array.isArray(savedReviews)
+        ? savedReviews
+        : FALLBACK_REVIEW_ITEMS.map((row) => ({ ...row })),
     );
+    const dbOffers = (offerData as OfferRow[]) ?? [];
+    if (dbOffers.length === 0) {
+      setOffersVirtual(true);
+      setOffers(fallbackSlidesToOfferRows(productRows));
+    } else {
+      setOffersVirtual(false);
+      setOffers(
+        dbOffers.map((o) => {
+          const p = linkedProduct(o, productRows);
+          return {
+            ...o,
+            priceDraft: p ? dollars(p.price_cents) : "",
+            category_id: p?.category_id ?? "cat-cookies",
+          };
+        }),
+      );
+    }
     setOrders(
       ((orderData as unknown as OrderRow[]) ?? []).map((row) =>
         row.status === "ready" ? { ...row, status: "pending" } : row,
@@ -581,14 +619,14 @@ export function AdminClient() {
     }
   };
 
-  const saveOffer = async (row: OfferRow, isNew = false) => {
+  const writeOfferRow = async (row: OfferRow, isNew: boolean): Promise<boolean> => {
     const id = slugify(row.id || row.title_en);
     if (!id || !row.title_en.trim() || !row.image_url.trim()) {
       flash(t("Title and image URL are required", "Título y URL de imagen son obligatorios", lang));
-      return;
+      return false;
     }
     const name_en = row.title_en.trim();
-    const name_es = row.title_es.trim() || name_en;
+    const name_es = name_en;
     const price_cents = toCents(row.priceDraft ?? "");
     let cta_href = "/order";
     if (price_cents > 0) {
@@ -604,7 +642,7 @@ export function AdminClient() {
               name_en,
               name_es,
               description_en: row.offer_en.trim() || name_en,
-              description_es: row.offer_es.trim() || name_es,
+              description_es: row.offer_en.trim() || name_en,
               price_cents,
               image_url: row.image_url.trim(),
               category_id: row.category_id || existing.category_id || "cat-cookies",
@@ -618,7 +656,7 @@ export function AdminClient() {
             name_es,
             slug,
             description_en: row.offer_en.trim() || name_en,
-            description_es: row.offer_es.trim() || name_es,
+            description_es: row.offer_en.trim() || name_en,
             price_cents,
             image_url: row.image_url.trim(),
             // ponytail: cookie-size ship dims; add fields if a special needs custom packing
@@ -631,7 +669,7 @@ export function AdminClient() {
           });
       if (prodError) {
         flash(prodError.message);
-        return;
+        return false;
       }
       cta_href = `/order/${existing?.slug ?? slug}`;
     }
@@ -641,11 +679,11 @@ export function AdminClient() {
       active: row.active,
       image_url: row.image_url,
       tag_en: row.tag_en,
-      tag_es: row.tag_es,
-      title_en: row.title_en,
-      title_es: row.title_es,
+      tag_es: row.tag_en,
+      title_en: name_en,
+      title_es: name_en,
       offer_en: row.offer_en,
-      offer_es: row.offer_es,
+      offer_es: row.offer_en.trim() || name_en,
       cta_href,
     };
     const { error } = isNew
@@ -653,8 +691,32 @@ export function AdminClient() {
       : await supabase.from("weekly_offers").update(payload).eq("id", row.id);
     if (error) {
       flash(error.message);
+      return false;
+    }
+    return true;
+  };
+
+  const saveOffer = async (row: OfferRow, isNew = false) => {
+    const id = slugify(row.id || row.title_en);
+    if (!id || !row.title_en.trim() || !row.image_url.trim()) {
+      flash(t("Title and image URL are required", "Título y URL de imagen son obligatorios", lang));
       return;
     }
+    const normalized = { ...row, id };
+
+    if (offersVirtual) {
+      const nextRows = isNew ? [...offers, normalized] : offers.map((o) => (o.id === normalized.id ? normalized : o));
+      for (const r of nextRows) {
+        if (!(await writeOfferRow(r, true))) return;
+      }
+      setOffersVirtual(false);
+      flash(t("Saved", "Guardado", lang));
+      if (isNew) setDraftOffer(emptyOffer());
+      await load();
+      return;
+    }
+
+    if (!(await writeOfferRow(normalized, isNew))) return;
     flash(t("Saved", "Guardado", lang));
     if (isNew) setDraftOffer(emptyOffer());
     await load();
@@ -701,6 +763,19 @@ export function AdminClient() {
 
   const deleteOffer = async (id: string) => {
     if (!id) return;
+    if (offersVirtual) {
+      const nextRows = offers.filter((o) => o.id !== id);
+      setOffers(nextRows);
+      if (nextRows.length) {
+        for (const r of nextRows) {
+          if (!(await writeOfferRow(r, true))) return;
+        }
+        setOffersVirtual(false);
+      }
+      flash(t("Deleted", "Eliminado", lang));
+      await load();
+      return;
+    }
     const { error } = await supabase.from("weekly_offers").delete().eq("id", id);
     if (error) flash(error.message);
     else {
@@ -787,46 +862,127 @@ export function AdminClient() {
     flash(t("Saved", "Guardado", lang));
   };
 
-  const deleteProduct = async (id: string) => {
-    if (!id) return;
+  const deleteProductById = async (id: string): Promise<{ ok: true } | { ok: false; message: string }> => {
+    if (!id) return { ok: false, message: "" };
     const { data, error } = await supabase.from("products").delete().eq("id", id).select("id");
     if (error) {
-      flash(
-        error.code === "23503" || /foreign key/i.test(error.message)
-          ? t(
-              "This product is on an order. Uncheck On menu to hide it.",
-              "Este producto está en un pedido. Desmarca En menú para ocultarlo.",
-              lang,
-            )
-          : error.message,
-      );
-      return;
+      return {
+        ok: false,
+        message:
+          error.code === "23503" || /foreign key/i.test(error.message)
+            ? t(
+                "This product is on an order. Uncheck On menu to hide it.",
+                "Este producto está en un pedido. Desmarca En menú para ocultarlo.",
+                lang,
+              )
+            : error.message,
+      };
     }
     if (!data?.length) {
-      flash(t("Couldn’t delete that product.", "No se pudo borrar ese producto.", lang));
+      return { ok: false, message: t("Couldn’t delete that product.", "No se pudo borrar ese producto.", lang) };
+    }
+    return { ok: true };
+  };
+
+  const deleteProduct = async (id: string) => {
+    const result = await deleteProductById(id);
+    if (!result.ok) {
+      if (result.message) flash(result.message);
       return;
     }
     setProducts((rows) => rows.filter((r) => r.id !== id));
     flash(t("Deleted", "Eliminado", lang));
   };
 
-  const addProduct = async () => {
-    const name_en = newNameEn.trim();
-    const name_es = newNameEs.trim() || name_en;
-    const slug = slugify(name_en);
-    const price_cents = toCents(newPrice);
-    const description_en = newDescEn.trim() || name_en;
-    if (!name_en || !slug) {
+  const addCategory = async () => {
+    const name_en = newGroupNameEn.trim();
+    const name_es = name_en;
+    const base = slugify(name_en);
+    if (!name_en || !base) {
       flash(t("Name is required", "El nombre es obligatorio", lang));
       return;
     }
-    if (price_cents <= 0) {
-      flash(t("Enter a price", "Ingresa un precio", lang));
+    const usedIds = new Set(categories.map((c) => c.id));
+    const usedSlugs = new Set(categories.map((c) => c.slug));
+    let slug = base;
+    let id = `cat-${base}`;
+    for (let n = 2; usedIds.has(id) || usedSlugs.has(slug); n++) {
+      slug = `${base}-${n}`;
+      id = `cat-${base}-${n}`;
+    }
+    const sort = categories.reduce((max, c) => Math.max(max, c.sort ?? 0), 0) + 1;
+    const { error } = await supabase.from("categories").insert({ id, name_en, name_es, slug, sort });
+    if (error) {
+      flash(error.message);
       return;
     }
+    setNewGroupNameEn("");
+    await load();
+    flash(t("Group added", "Grupo agregado", lang));
+  };
+
+  const requestRemoveCategory = (cat: CategoryRow) => {
+    if (removeCategoryArmedId !== cat.id) {
+      setRemoveCategoryArmedId(cat.id);
+      return;
+    }
+    void removeCategory(cat);
+  };
+
+  const removeCategory = async (cat: CategoryRow) => {
+    setRemoveCategoryArmedId(null);
+    const catProducts = products.filter((p) => p.category_id === cat.id);
+    for (const p of catProducts) {
+      const result = await deleteProductById(p.id);
+      if (!result.ok) {
+        if (result.message) flash(result.message);
+        return;
+      }
+    }
+    const { error } = await supabase.from("categories").delete().eq("id", cat.id);
+    if (error) {
+      flash(error.message);
+      return;
+    }
+    await load();
+    flash(t("Group removed", "Grupo eliminado", lang));
+  };
+
+  const addProduct = async () => {
+    const name_en = newNameEn.trim();
+    const name_es = name_en;
+    const base = slugify(name_en);
+    const price_cents = toCents(newPrice);
+    const description_en = newDescEn.trim() || name_en;
+    const categoryIds = new Set(categories.map((c) => c.id));
+    let category_id = newCat;
+    if (!categoryIds.has(category_id)) {
+      category_id = categories[0]?.id ?? "";
+      if (category_id) setNewCat(category_id);
+    }
+    if (!category_id || !categoryIds.has(category_id)) {
+      setAddProductError(t("Choose a group", "Elige un grupo", lang));
+      return;
+    }
+    if (!name_en || !base) {
+      setAddProductError(t("Name is required", "El nombre es obligatorio", lang));
+      return;
+    }
+    if (price_cents <= 0) {
+      setAddProductError(t("Enter a price", "Ingresa un precio", lang));
+      return;
+    }
+    const usedIds = new Set(products.map((p) => p.id));
+    const usedSlugs = new Set(products.map((p) => p.slug));
+    let slug = base;
+    let id = `prod-${base}`;
+    for (let n = 2; usedIds.has(id) || usedSlugs.has(slug); n++) {
+      slug = `${base}-${n}`;
+      id = `prod-${base}-${n}`;
+    }
     const { error } = await supabase.from("products").insert({
-      id: `prod-${slug}`,
-      category_id: newCat,
+      id,
+      category_id,
       name_en,
       name_es,
       slug,
@@ -843,11 +999,21 @@ export function AdminClient() {
       active: true,
     });
     if (error) {
-      flash(error.message);
+      if (error.code === "23505") {
+        setAddProductError(
+          t(
+            "A product with this name already exists. Use a different name.",
+            "Ya existe un producto con ese nombre. Usa otro nombre.",
+            lang,
+          ),
+        );
+      } else {
+        setAddProductError(error.message);
+      }
       return;
     }
+    setAddProductError("");
     setNewNameEn("");
-    setNewNameEs("");
     setNewPrice("");
     setNewDescEn("");
     await load();
@@ -1202,6 +1368,21 @@ export function AdminClient() {
       {tab === "menu" && (
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">{t("Menu prices", "Precios del menú", lang)}</h2>
+        <div className="flex flex-wrap items-end gap-2 rounded-2xl border border-dashed border-blush bg-white p-4">
+          <input
+            value={newGroupNameEn}
+            onChange={(e) => setNewGroupNameEn(e.target.value)}
+            placeholder={t("Name (EN)", "Nombre (EN)", lang)}
+            className={inputClass}
+          />
+          <button
+            type="button"
+            onClick={() => void addCategory()}
+            className="rounded-xl bg-berry px-4 py-2 text-sm font-medium text-white"
+          >
+            {t("Add group", "Agregar grupo", lang)}
+          </button>
+        </div>
         <div className="overflow-x-auto rounded-2xl bg-white p-4 shadow-sm">
           <table className="w-full min-w-[480px] text-left text-sm">
             <thead>
@@ -1220,22 +1401,60 @@ export function AdminClient() {
                   (p) => !p.category_id || !categoryIds.has(p.category_id),
                 );
                 const menuGroups = [
-                  ...categories
-                    .map((cat) => ({
-                      key: cat.id,
-                      title: lang === "es" ? cat.name_es : cat.name_en,
-                      products: products.filter((p) => p.category_id === cat.id),
-                    }))
-                    .filter((g) => g.products.length > 0),
+                  ...categories.map((cat) => ({
+                    key: cat.id,
+                    category: cat as CategoryRow | null,
+                    title: lang === "es" ? cat.name_es : cat.name_en,
+                    products: products.filter((p) => p.category_id === cat.id),
+                  })),
                   ...(otherProducts.length
-                    ? [{ key: "other", title: t("Other", "Otros", lang), products: otherProducts }]
+                    ? [
+                        {
+                          key: "other",
+                          category: null as CategoryRow | null,
+                          title: t("Other", "Otros", lang),
+                          products: otherProducts,
+                        },
+                      ]
                     : []),
                 ];
                 return menuGroups.map((group) => (
                   <Fragment key={group.key}>
                     <tr className="border-t border-blush/60 bg-blush/25">
-                      <td colSpan={5} className="px-3 py-2 font-display text-sm uppercase tracking-wide text-berry">
-                        {group.title}
+                      <td colSpan={4} className="px-3 py-2 font-display text-sm uppercase tracking-wide text-berry">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                          <span>{group.title}</span>
+                          {group.category && removeCategoryArmedId === group.category.id ? (
+                            <span className="font-sans text-xs font-normal normal-case tracking-normal text-coal/60">
+                              {t(
+                                "This removes the group and its items.",
+                                "Esto quita el grupo y sus productos.",
+                                lang,
+                              )}
+                            </span>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-right whitespace-nowrap">
+                        {group.category ? (
+                          <div className="flex flex-col items-end gap-1">
+                            <div className="flex flex-wrap items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => requestRemoveCategory(group.category!)}
+                                className={`text-sm hover:underline ${
+                                  removeCategoryArmedId === group.category.id
+                                    ? "font-medium text-berry"
+                                    : "text-coal/50"
+                                }`}
+                              >
+                                {removeCategoryArmedId === group.category.id
+                                  ? t("Click again to remove", "Haz clic otra vez para quitar", lang)
+                                  : t("Remove group", "Quitar grupo", lang)}
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
                       </td>
                     </tr>
                     {group.products.map((row) => (
@@ -1260,15 +1479,11 @@ export function AdminClient() {
                         </div>
                       ))}
                     </div>
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp,image/gif"
-                      className="mt-1 max-w-[140px] text-xs file:mr-1 file:rounded file:border-0 file:bg-blush/50 file:px-2 file:py-1 file:text-xs"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        e.target.value = "";
-                        if (file) void uploadProductImage(row, file);
-                      }}
+                    <HiddenFileUpload
+                      lang={lang}
+                      compact
+                      className="mt-1"
+                      onFile={(file) => void uploadProductImage(row, file)}
                     />
                     <p className="mt-0.5 text-[10px] text-coal/50">{t("Save to apply", "Guardar para aplicar", lang)}</p>
                   </td>
@@ -1322,8 +1537,16 @@ export function AdminClient() {
             lang,
           )}
         </p>
-        <div className="space-y-2 rounded-2xl border border-dashed border-blush bg-white p-4">
+        <div
+          id="add-product"
+          className="space-y-2 rounded-2xl border border-dashed border-blush bg-white p-4"
+        >
           <p className="text-sm font-medium">{t("Add product", "Agregar producto", lang)}</p>
+          {addProductError ? (
+            <p className="text-sm text-red-700" role="alert">
+              {addProductError}
+            </p>
+          ) : null}
           <div className="grid gap-2 sm:grid-cols-2">
             <input
               value={newNameEn}
@@ -1331,13 +1554,14 @@ export function AdminClient() {
               placeholder={t("Name (EN)", "Nombre (EN)", lang)}
               className={inputClass}
             />
-            <input
-              value={newNameEs}
-              onChange={(e) => setNewNameEs(e.target.value)}
-              placeholder={t("Name (ES, optional)", "Nombre (ES, opcional)", lang)}
+            <select
+              value={categories.some((c) => c.id === newCat) ? newCat : (categories[0]?.id ?? "")}
+              onChange={(e) => {
+                setNewCat(e.target.value);
+                setAddProductError("");
+              }}
               className={inputClass}
-            />
-            <select value={newCat} onChange={(e) => setNewCat(e.target.value)} className={inputClass}>
+            >
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>
                   {lang === "es" ? c.name_es : c.name_en}
@@ -1358,26 +1582,16 @@ export function AdminClient() {
                 placeholder="Image URL or /test-images/…"
                 className={inputClass}
               />
-              <label className="flex flex-wrap items-center gap-3 text-sm text-coal/70">
-                <span className="shrink-0 font-medium text-berry">
-                  {t("Or upload from this computer", "O sube desde esta computadora", lang)}
-                </span>
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
-                  className="max-w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-blush/50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-coal"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    e.target.value = "";
-                    if (!file) return;
-                    void uploadAdminImage(file)
-                      .then((url) => setNewImage(url))
-                      .catch((err) =>
-                        flash(err instanceof Error ? err.message : t("Upload failed", "No se pudo subir", lang)),
-                      );
-                  }}
-                />
-              </label>
+              <HiddenFileUpload
+                lang={lang}
+                onFile={(file) =>
+                  void uploadAdminImage(file)
+                    .then((url) => setNewImage(url))
+                    .catch((err) =>
+                      flash(err instanceof Error ? err.message : t("Upload failed", "No se pudo subir", lang)),
+                    )
+                }
+              />
               {newImage ? <img src={newImage} alt="" className="h-20 rounded-lg object-cover" /> : null}
             </div>
             <input
@@ -1687,27 +1901,17 @@ function SitePageEditor({
           placeholder="Photo URL"
           className={inputClass}
         />
-        <label className="flex flex-wrap items-center gap-3 text-sm text-coal/70">
-          <span className="shrink-0 font-medium text-berry">
-            {t("Or upload from this computer", "O sube desde esta computadora", lang)}
-          </span>
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif"
-            className="max-w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-blush/50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-coal"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              e.target.value = "";
-              if (!file) return;
-              setUploadMsg("");
-              void uploadAdminImage(file)
-                .then((url) => set({ photo_url: url }))
-                .catch((err) =>
-                  setUploadMsg(err instanceof Error ? err.message : t("Upload failed", "No se pudo subir", lang)),
-                );
-            }}
-          />
-        </label>
+        <HiddenFileUpload
+          lang={lang}
+          onFile={(file) => {
+            setUploadMsg("");
+            void uploadAdminImage(file)
+              .then((url) => set({ photo_url: url }))
+              .catch((err) =>
+                setUploadMsg(err instanceof Error ? err.message : t("Upload failed", "No se pudo subir", lang)),
+              );
+          }}
+        />
         {uploadMsg ? <p className="text-sm text-berry">{uploadMsg}</p> : null}
         {str("photo_url") ? <img src={str("photo_url")} alt="" className="h-20 rounded-lg object-cover" /> : null}
         <textarea
@@ -1916,6 +2120,58 @@ function SitePageEditor({
   );
 }
 
+function HiddenFileUpload({
+  lang,
+  compact = false,
+  disabled = false,
+  uploading = false,
+  onFile,
+  className,
+}: {
+  lang: "en" | "es";
+  compact?: boolean;
+  disabled?: boolean;
+  uploading?: boolean;
+  onFile: (file: File) => void;
+  className?: string;
+}) {
+  const busy = disabled || uploading;
+  const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file) onFile(file);
+  };
+
+  if (compact) {
+    return (
+      <input
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        disabled={busy}
+        className={`max-w-[140px] text-xs file:mr-1 file:rounded file:border-0 file:bg-blush/50 file:px-2 file:py-1 file:text-xs file:font-medium file:text-coal disabled:opacity-60 ${className ?? ""}`}
+        onChange={onChange}
+      />
+    );
+  }
+
+  return (
+    <label className={`flex flex-wrap items-center gap-3 text-sm text-coal/70 ${className ?? ""}`}>
+      <span className="shrink-0 font-medium text-berry">
+        {uploading
+          ? t("Uploading…", "Subiendo…", lang)
+          : t("Or upload from this computer", "O sube desde esta computadora", lang)}
+      </span>
+      <input
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        disabled={busy}
+        className="max-w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-blush/50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-coal disabled:opacity-60"
+        onChange={onChange}
+      />
+    </label>
+  );
+}
+
 function ReviewForm({
   review,
   onChange,
@@ -1927,6 +2183,7 @@ function ReviewForm({
   onSave: () => void;
   onDelete?: () => void;
 }) {
+  const { lang } = useLang();
   const set = (patch: Partial<ReviewItem>) => onChange({ ...review, ...patch });
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState("");
@@ -1974,20 +2231,12 @@ function ReviewForm({
           placeholder="Image URL"
           className={inputClass}
         />
-        <label className="mt-2 block text-sm text-coal/70">
-          {uploading ? "Uploading…" : "Or upload from this computer"}
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif"
-            disabled={uploading}
-            className="mt-1 block w-full text-sm"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              e.target.value = "";
-              void pickFile(file);
-            }}
-          />
-        </label>
+        <HiddenFileUpload
+          lang={lang}
+          className="mt-2"
+          uploading={uploading}
+          onFile={(file) => void pickFile(file)}
+        />
         {uploadMsg ? <p className="text-sm text-berry">{uploadMsg}</p> : null}
         {review.image_url ? (
           <img src={review.image_url} alt="" className="mt-2 h-20 rounded-lg object-cover" />
@@ -2002,7 +2251,7 @@ function ReviewForm({
           Save
         </button>
         {onDelete && (
-          <button type="button" onClick={onDelete} className="rounded-xl px-4 py-2 text-sm text-coal/60 hover:text-berry">
+          <button type="button" onClick={onDelete} className="rounded-xl px-4 py-2 text-sm font-medium text-coal hover:text-berry">
             Delete
           </button>
         )}
@@ -2046,10 +2295,8 @@ function OfferForm({
   return (
     <div className="space-y-2 rounded-2xl bg-white p-4 shadow-sm">
       <div className="grid gap-2 sm:grid-cols-2">
-        <input value={offer.title_en} onChange={(e) => set({ title_en: e.target.value })} placeholder="Title (EN)" className={inputClass} />
-        <input value={offer.title_es} onChange={(e) => set({ title_es: e.target.value })} placeholder="Título (ES)" className={inputClass} />
-        <input value={offer.offer_en} onChange={(e) => set({ offer_en: e.target.value })} placeholder="Offer (EN)" className={inputClass} />
-        <input value={offer.offer_es} onChange={(e) => set({ offer_es: e.target.value })} placeholder="Oferta (ES)" className={inputClass} />
+        <input value={offer.title_en} onChange={(e) => set({ title_en: e.target.value })} placeholder="Title (EN)" className={`${inputClass} sm:col-span-2`} />
+        <input value={offer.offer_en} onChange={(e) => set({ offer_en: e.target.value })} placeholder="Offer (EN)" className={`${inputClass} sm:col-span-2`} />
         <div className="space-y-2 sm:col-span-2">
           <input
             value={offer.image_url}
@@ -2057,29 +2304,13 @@ function OfferForm({
             placeholder="Image URL or /test-images/…"
             className={inputClass}
           />
-          <label className="flex flex-wrap items-center gap-3 text-sm text-coal/70">
-            <span className="shrink-0 font-medium text-berry">
-              {uploading ? t("Uploading…", "Subiendo…", lang) : t("Or upload from this computer", "O sube desde esta computadora", lang)}
-            </span>
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              disabled={uploading}
-              className="max-w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-blush/50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-coal"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                e.target.value = "";
-                void pickFile(file);
-              }}
-            />
-          </label>
+          <HiddenFileUpload lang={lang} uploading={uploading} onFile={(file) => void pickFile(file)} />
           {uploadMsg && <p className="text-sm text-berry">{uploadMsg}</p>}
           {offer.image_url ? (
             <img src={offer.image_url} alt="" className="h-20 rounded-lg object-cover" />
           ) : null}
         </div>
         <input value={offer.tag_en ?? ""} onChange={(e) => set({ tag_en: e.target.value })} placeholder="Tag EN" className={inputClass} />
-        <input value={offer.tag_es ?? ""} onChange={(e) => set({ tag_es: e.target.value })} placeholder="Tag ES" className={inputClass} />
         <input
           inputMode="decimal"
           value={offer.priceDraft ?? ""}
@@ -2112,12 +2343,12 @@ function OfferForm({
           {t("Active on home", "Activa en inicio", lang)}
         </label>
       </div>
-      <div className="flex gap-3 pt-1">
-        <button type="button" onClick={() => onSave(offer)} className="text-sm font-medium text-berry hover:underline">
+      <div className="flex flex-wrap gap-2 pt-1">
+        <button type="button" onClick={() => onSave(offer)} className="rounded-xl bg-berry px-4 py-2 text-sm font-medium text-white">
           {t("Save", "Guardar", lang)}
         </button>
         {onDelete && (
-          <button type="button" onClick={onDelete} className="text-sm text-coal/50 hover:underline">
+          <button type="button" onClick={onDelete} className="rounded-xl px-4 py-2 text-sm font-medium text-coal hover:text-berry">
             {t("Delete", "Borrar", lang)}
           </button>
         )}

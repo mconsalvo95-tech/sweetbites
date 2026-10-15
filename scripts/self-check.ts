@@ -26,7 +26,6 @@ import {
 } from "../lib/product-images";
 import { addressFromPhoton, provinceCode } from "../lib/address-search";
 import { isAllowedWantedOn, localDateIso, minWantedOnIso, wantedNote, wantedOnFromNotes } from "../lib/shop";
-
 const LOCAL_FILE = join(process.cwd(), ".local-orders.json");
 
 function assert(cond: unknown, msg: string): asserts cond {

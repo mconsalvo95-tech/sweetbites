@@ -85,7 +85,8 @@ export async function getHomeReviews(): Promise<HomeSlide[]> {
     .eq("slug", "reviews")
     .maybeSingle();
 
-  const items = (data?.body as { items?: ReviewItem[] } | null)?.items;
-  if (error || !items?.length) return toSlides(FALLBACK_REVIEW_ITEMS);
-  return toSlides(items);
+  if (error || !data) return toSlides(FALLBACK_REVIEW_ITEMS);
+  const items = (data.body as { items?: ReviewItem[] } | null)?.items;
+  if (Array.isArray(items)) return toSlides(items);
+  return toSlides(FALLBACK_REVIEW_ITEMS);
 }
