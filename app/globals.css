@@ -361,3 +361,12 @@ input, select, textarea, button {
     transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
   }
 }
+
+/* iOS Safari zooms focused fields below 16px; admin uses text-sm (14px). */
+@supports (-webkit-touch-callout: none) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}

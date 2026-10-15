@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Lilita_One, Montserrat } from "next/font/google";
 import { RootLayoutClient } from "./layout-client";
 import { shop } from "@/lib/shop";
@@ -23,6 +23,12 @@ export const metadata: Metadata = {
     template: `%s | ${shop.name}`,
   },
   description: "Bakery and sweets in Red Deer, Alberta.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

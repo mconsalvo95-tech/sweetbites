@@ -2135,6 +2135,7 @@ function HiddenFileUpload({
   onFile: (file: File) => void;
   className?: string;
 }) {
+  const [dragOver, setDragOver] = useState(false);
   const busy = disabled || uploading;
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -2146,7 +2147,7 @@ function HiddenFileUpload({
     return (
       <input
         type="file"
-        accept="image/jpeg,image/png,image/webp,image/gif"
+        accept="image/*"
         disabled={busy}
         className={`max-w-[140px] text-xs file:mr-1 file:rounded file:border-0 file:bg-blush/50 file:px-2 file:py-1 file:text-xs file:font-medium file:text-coal disabled:opacity-60 ${className ?? ""}`}
         onChange={onChange}
@@ -2154,21 +2155,57 @@ function HiddenFileUpload({
     );
   }
 
+  const dropHighlight = dragOver && !busy;
+
   return (
-    <label className={`flex flex-wrap items-center gap-3 text-sm text-coal/70 ${className ?? ""}`}>
-      <span className="shrink-0 font-medium text-berry">
-        {uploading
-          ? t("Uploading…", "Subiendo…", lang)
-          : t("Or upload from this computer", "O sube desde esta computadora", lang)}
-      </span>
-      <input
-        type="file"
-        accept="image/jpeg,image/png,image/webp,image/gif"
-        disabled={busy}
-        className="max-w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-blush/50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-coal disabled:opacity-60"
-        onChange={onChange}
-      />
-    </label>
+    <div
+      className={`rounded-xl border-2 border-dashed transition-colors ${
+        dropHighlight ? "border-berry bg-blush/35" : "border-berry/35 bg-blush/10"
+      } ${busy ? "opacity-60" : ""} ${className ?? ""}`}
+      onDragEnter={(e) => {
+        if (busy) return;
+        e.preventDefault();
+        setDragOver(true);
+      }}
+      onDragOver={(e) => {
+        if (busy) return;
+        e.preventDefault();
+        setDragOver(true);
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+        setDragOver(false);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragOver(false);
+        if (busy) return;
+        const file = Array.from(e.dataTransfer.files).find((f) => f.type.startsWith("image/"));
+        if (file) onFile(file);
+      }}
+    >
+      <label
+        className={`block cursor-pointer px-4 py-3 ${busy ? "pointer-events-none" : ""}`}
+      >
+        <p className="text-center text-sm font-medium text-coal/80">
+          {t("Drop a photo here", "Suelta una foto aquí", lang)}
+        </p>
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-3 text-sm text-coal/70 sm:justify-start">
+          <span className="shrink-0 font-medium text-berry">
+            {uploading
+              ? t("Uploading…", "Subiendo…", lang)
+              : t("Or upload from this computer", "O sube desde esta computadora", lang)}
+          </span>
+          <input
+            type="file"
+            accept="image/*"
+            disabled={busy}
+            className="max-w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-blush/50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-coal disabled:opacity-60"
+            onChange={onChange}
+          />
+        </div>
+      </label>
+    </div>
   );
 }
 
