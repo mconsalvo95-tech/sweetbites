@@ -22,16 +22,14 @@ function InstagramIcon() {
 
 function FacebookIcon() {
   return (
-    <svg
-      width="22"
-      height="22"
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      aria-hidden
-    >
+    <svg width="40" height="40" viewBox="0 0 36 36" aria-hidden>
       <path
-        transform="translate(0.5 -2)"
-        d="M14 8h3V4h-3c-2.8 0-5 2.2-5 5v2H6v4h3v9h4v-9h3.2l.8-4H13V9c0-.6.4-1 1-1z"
+        fill="#1877F2"
+        d="M36 18C36 8.06 27.94 0 18 0S0 8.06 0 18c0 8.98 6.58 16.42 15.17 17.74V23.2h-4.57V18h4.57v-3.97c0-4.51 2.69-7 6.8-7 1.97 0 4.03.35 4.03.35v4.43h-2.27c-2.24 0-2.94 1.39-2.94 2.81V18h5l-.8 5.2h-4.2v12.54C29.42 34.42 36 26.98 36 18z"
+      />
+      <path
+        fill="#fff"
+        d="M25.04 23.2l.8-5.2h-5v-3.38c0-1.42.7-2.81 2.94-2.81H26V7.38s-2.06-.35-4.03-.35c-4.11 0-6.8 2.49-6.8 7V18H10.6v5.2h4.57v12.54a18.2 18.2 0 0 0 5.66 0V23.2h4.21z"
       />
     </svg>
   );
@@ -53,7 +51,7 @@ export function SocialLinks({ lang, className = "" }: { lang: Lang; className?: 
         href={shop.facebook}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex h-10 w-10 origin-center items-center justify-center rounded-full bg-[#1877F2] text-white transition-transform hover:scale-105 active:scale-95"
+        className="flex h-10 w-10 origin-center items-center justify-center overflow-hidden rounded-full transition-transform hover:scale-105 active:scale-95"
         aria-label={t("Facebook", "Facebook", lang)}
       >
         <FacebookIcon />

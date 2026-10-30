@@ -1,19 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CartBar } from "@/components/CartBar";
-import { CategoryChips } from "@/components/CategoryChips";
 import { ProductCard } from "@/components/ProductCard";
 import { CATEGORIES, PRODUCTS, fetchCatalog } from "@/lib/catalog";
 import { useLang } from "@/lib/lang";
 import { t } from "@/lib/format";
 import type { Category, Product } from "@/lib/types";
 
+const ALL_SLUG = "all";
+
 export default function OrderPage() {
   const { lang } = useLang();
   const [categories, setCategories] = useState<Category[]>(CATEGORIES);
   const [products, setProducts] = useState<Product[]>(PRODUCTS);
-  const [activeSlug, setActiveSlug] = useState(categories[0]?.slug ?? "cookies");
+  const [activeSlug, setActiveSlug] = useState(ALL_SLUG);
 
   useEffect(() => {
     void fetchCatalog().then((catalog) => {
@@ -21,50 +22,54 @@ export default function OrderPage() {
       setProducts(catalog.products);
     });
   }, []);
-  const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
-  const grouped = useMemo(() => {
-    return categories
-      .map((cat) => ({
-        category: cat,
-        products: products.filter((p) => p.categoryId === cat.id),
-      }))
-      .filter((g) => g.products.length > 0);
+  const visibleCategories = useMemo(() => {
+    return categories.filter((cat) => products.some((p) => p.categoryId === cat.id));
   }, [categories, products]);
 
-  const visibleCategories = useMemo(() => grouped.map((g) => g.category), [grouped]);
+  const displayedProducts = useMemo(() => {
+    if (activeSlug === ALL_SLUG) return products;
+    const cat = categories.find((c) => c.slug === activeSlug);
+    if (!cat) return products;
+    return products.filter((p) => p.categoryId === cat.id);
+  }, [activeSlug, categories, products]);
 
-  useEffect(() => {
-    if (!visibleCategories.length) return;
-    if (!visibleCategories.some((c) => c.slug === activeSlug)) {
-      setActiveSlug(visibleCategories[0].slug);
-    }
-  }, [visibleCategories, activeSlug]);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-        if (visible?.target.id.startsWith("cat-")) {
-          setActiveSlug(visible.target.id.replace("cat-", ""));
-        }
-      },
-      { rootMargin: "-120px 0px -60% 0px", threshold: [0, 0.25, 0.5] },
-    );
-
-    Object.values(sectionRefs.current).forEach((el) => {
-      if (el) observer.observe(el);
-    });
-
-    return () => observer.disconnect();
-  }, [grouped]);
-
-  const scrollTo = (slug: string) => {
-    setActiveSlug(slug);
-    sectionRefs.current[slug]?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
+  const categoryNav = (
+    <nav aria-label={t("Browse by category", "Explorar por categoría", lang)}>
+      <h2 className="mb-3 hidden text-sm font-semibold uppercase tracking-wide text-coal md:block">
+        {t("Browse by category", "Explorar por categoría", lang)}
+      </h2>
+      <ul className="flex flex-wrap gap-x-4 gap-y-2 md:flex-col md:gap-y-2">
+        <li>
+          <button
+            type="button"
+            onClick={() => setActiveSlug(ALL_SLUG)}
+            className={`text-left text-sm text-coal hover:text-berry ${
+              activeSlug === ALL_SLUG ? "font-bold" : "font-normal"
+            }`}
+          >
+            {t("All items", "Todos los productos", lang)}
+          </button>
+        </li>
+        {visibleCategories.map((cat) => {
+          const active = cat.slug === activeSlug;
+          return (
+            <li key={cat.id}>
+              <button
+                type="button"
+                onClick={() => setActiveSlug(cat.slug)}
+                className={`text-left text-sm text-coal hover:text-berry ${
+                  active ? "font-bold" : "font-normal"
+                }`}
+              >
+                {lang === "es" ? cat.nameEs : cat.nameEn}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
+  );
 
   return (
     <>
@@ -75,33 +80,15 @@ export default function OrderPage() {
         {t("Tap an item to customize", "Toca un producto para personalizar", lang)}
       </p>
 
-      <CategoryChips
-        categories={visibleCategories}
-        activeSlug={activeSlug}
-        lang={lang}
-        onSelect={scrollTo}
-      />
-
-      <div className="mt-4 space-y-8">
-        {grouped.map(({ category, products: catProducts }) => (
-          <section
-            key={category.id}
-            id={`cat-${category.slug}`}
-            ref={(el) => {
-              sectionRefs.current[category.slug] = el;
-            }}
-            className="menu-category-scroll"
-          >
-            <h2 className="font-display gloss mb-3 rounded-xl bg-berry px-4 py-2.5 text-center text-lg uppercase text-white">
-              {lang === "es" ? category.nameEs : category.nameEn}
-            </h2>
-            <div className="space-y-3">
-              {catProducts.map((product) => (
-                <ProductCard key={product.id} product={product} lang={lang} />
-              ))}
-            </div>
-          </section>
-        ))}
+      <div className="mt-6 md:mt-8 md:flex md:gap-10 lg:gap-14">
+        <aside className="mb-6 shrink-0 md:mb-0 md:w-44 lg:w-52">{categoryNav}</aside>
+        <div className="min-w-0 flex-1">
+          <div className="grid grid-cols-2 gap-4 sm:gap-5 md:grid-cols-3 md:gap-6 lg:gap-8">
+            {displayedProducts.map((product) => (
+              <ProductCard key={product.id} product={product} lang={lang} />
+            ))}
+          </div>
+        </div>
       </div>
 
       <CartBar />

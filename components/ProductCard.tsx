@@ -1,74 +1,32 @@
 import Image from "next/image";
-
 import Link from "next/link";
-
 import type { Product } from "@/lib/types";
-
-import { formatCad, pickDesc, pickName } from "@/lib/format";
+import { pickName } from "@/lib/format";
 import { primaryProductImage } from "@/lib/product-images";
 
-
-
 export function ProductCard({ product, lang }: { product: Product; lang: "en" | "es" }) {
+  const imageSrc = primaryProductImage(product.imageUrl);
 
   return (
-
     <Link
-
       href={`/order/${product.slug}`}
-
-      className="product-card flex gap-3 rounded-xl bg-white p-3 shadow-[0_1px_5px_rgba(0,0,0,0.12)]"
-
+      className="product-card group block overflow-hidden rounded-xl bg-white shadow-[0_1px_5px_rgba(0,0,0,0.12)] transition-shadow hover:shadow-[0_2px_10px_rgba(0,0,0,0.14)]"
     >
-
-      <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-lg">
-
+      <div className="relative aspect-square w-full overflow-hidden">
         <Image
-
-          src={primaryProductImage(product.imageUrl)}
-
+          src={imageSrc}
           alt={pickName(product, lang)}
-
           fill
-          unoptimized={primaryProductImage(product.imageUrl).startsWith("http")}
-
-          className="object-cover"
-
-          sizes="96px"
-
+          unoptimized={imageSrc.startsWith("http")}
+          className="object-cover transition-transform group-hover:scale-[1.02]"
+          sizes="(max-width: 768px) 50vw, 33vw"
         />
-
       </div>
-
-      <div className="flex min-w-0 flex-1 flex-col justify-between py-0.5">
-
-        <div>
-
-          <h3 className="text-base font-semibold leading-tight text-berry">
-
-            {pickName(product, lang)}
-
-          </h3>
-
-          <p className="mt-1 line-clamp-2 text-sm text-coal/70">
-
-            {pickDesc(product, lang)}
-
-          </p>
-
-        </div>
-
-        <p className="text-right text-sm font-bold text-berry">
-
-          {formatCad(product.priceCents)}
-
-        </p>
-
+      <div className="px-2 py-3 text-center">
+        <h3 className="text-sm font-semibold uppercase leading-snug text-coal">
+          {pickName(product, lang)}
+        </h3>
       </div>
-
     </Link>
-
   );
-
 }
-
