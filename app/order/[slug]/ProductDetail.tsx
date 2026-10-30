@@ -31,6 +31,10 @@ export function ProductDetail({ product, more }: Props) {
   const heroUrl = gallery[activeImage] ?? gallery[0];
   const description = pickDesc(product, lang);
 
+  const stepPhoto = (delta: number) => {
+    setActiveImage((i) => (i + delta + gallery.length) % gallery.length);
+  };
+
   const optionsValid = useMemo(() => {
     return product.options.every((opt) => {
       const picked = selections[opt.id] ?? [];
@@ -88,7 +92,7 @@ export function ProductDetail({ product, more }: Props) {
     <div className="relative z-10 space-y-8">
       <div className="grid gap-8 lg:grid-cols-2 lg:items-start">
         <div className="space-y-2">
-          <div className="relative aspect-[16/10] max-h-[260px] overflow-hidden rounded-[20px] shadow-sm lg:aspect-square lg:max-h-none">
+          <div className="group relative aspect-[16/10] max-h-[260px] overflow-hidden rounded-[20px] shadow-sm lg:aspect-square lg:max-h-none">
             <Image
               src={heroUrl}
               alt={pickName(product, lang)}
@@ -98,6 +102,42 @@ export function ProductDetail({ product, more }: Props) {
               sizes="(max-width: 1024px) 100vw, 50vw"
               priority
             />
+            {gallery.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => stepPhoto(-1)}
+                  className="absolute left-3 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/95 text-coal opacity-0 shadow transition pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100 hover:bg-white"
+                  aria-label={t("Previous photo", "Foto anterior", lang)}
+                >
+                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
+                    <path
+                      d="M11 4L6 9L11 14"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => stepPhoto(1)}
+                  className="absolute right-3 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/95 text-coal opacity-0 shadow transition pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100 hover:bg-white"
+                  aria-label={t("Next photo", "Foto siguiente", lang)}
+                >
+                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
+                    <path
+                      d="M7 4L12 9L7 14"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+              </>
+            )}
           </div>
           {gallery.length > 1 && (
             <div className="flex gap-2 overflow-x-auto">

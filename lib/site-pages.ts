@@ -74,6 +74,14 @@ export const DEFAULT_FAQ_ITEMS: FaqItem[] = [
       "Entrega disponible 🚗💨\n\nSí hacemos entrega local. La disponibilidad depende de la fecha, la hora y la ubicación de tu pedido. Contáctanos para confirmar las opciones de entrega y los costos aplicables.",
   },
   {
+    qEn: "Do you offer gluten-free products?",
+    qEs: "¿Ofrecen productos sin gluten?",
+    aEn:
+      "Yes. We do offer gluten-free products, but they are special orders. Please contact us to arrange one.",
+    aEs:
+      "Sí. Ofrecemos productos sin gluten, pero son pedidos especiales. Contáctanos para coordinarlo.",
+  },
+  {
     qEn: "Can you ship across Canada?",
     qEs: "¿Envían a todo Canadá?",
     aEn: "Yes, via Canada Post. Rates show at checkout from our Red Deer kitchen.",
@@ -176,6 +184,15 @@ function mergeBody<T extends Record<string, unknown>>(defaults: T, raw: unknown)
   return { ...defaults, ...patch } as T;
 }
 
+function mergeFaqBody(defaults: FaqBody, raw: unknown): FaqBody {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return defaults;
+  const patch = raw as Partial<FaqBody>;
+  if (!Array.isArray(patch.items) || patch.items.length === 0) return defaults;
+  const savedQEn = new Set(patch.items.map((i) => i.qEn));
+  const appended = DEFAULT_FAQ_ITEMS.filter((d) => !savedQEn.has(d.qEn));
+  return { items: [...patch.items, ...appended] };
+}
+
 export function useSitePageBody<S extends SitePageSlug>(slug: S) {
   type Body = (typeof SITE_PAGE_DEFAULTS)[S];
   const defaults = SITE_PAGE_DEFAULTS[slug] as Body;
@@ -192,7 +209,11 @@ export function useSitePageBody<S extends SitePageSlug>(slug: S) {
       .eq("slug", slug)
       .maybeSingle()
       .then(({ data }) => {
-        setBody(mergeBody(base, data?.body));
+        setBody(
+          (slug === "faq"
+            ? mergeFaqBody(base as FaqBody, data?.body)
+            : mergeBody(base, data?.body)) as Body,
+        );
       });
   }, [slug]);
 

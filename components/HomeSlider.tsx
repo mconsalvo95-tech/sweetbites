@@ -120,7 +120,7 @@ export function HomeSlider({ slides, variant, ariaLabelEn, ariaLabelEs }: HomeSl
               key={i}
               className={`relative w-full min-w-full shrink-0 basis-full ${
                 variant === "promo"
-                  ? "aspect-[16/10] max-h-[260px] min-h-[220px] sm:aspect-[16/7] sm:max-h-none sm:min-h-[280px]"
+                  ? "aspect-[16/10] max-h-[220px] min-h-[180px] sm:aspect-[16/7] sm:max-h-none sm:min-h-[240px]"
                   : "aspect-[16/7] min-h-[220px] sm:min-h-[280px]"
               }`}
               aria-hidden={i !== index}
