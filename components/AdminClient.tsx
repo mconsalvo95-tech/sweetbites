@@ -24,6 +24,7 @@ import {
   mergeBlockedDates,
   type OrderCalendarBody,
 } from "@/lib/order-calendar";
+import { AdminBlockRangePicker, AdminBlockSingleDayPicker } from "@/components/AdminBlockCalendarPickers";
 import { OFFER_IMAGE_TYPES, prepareImageForUpload } from "@/lib/image-upload";
 import { getSupabaseBrowser } from "@/lib/supabase-browser";
 import type { PromoKind } from "@/lib/promos";
@@ -447,9 +448,6 @@ export function AdminClient() {
 
   const [draftOffer, setDraftOffer] = useState<OfferRow>(emptyOffer);
   const [orderCalendar, setOrderCalendar] = useState<OrderCalendarBody>({ ...DEFAULT_ORDER_CALENDAR });
-  const [newBlockedDate, setNewBlockedDate] = useState("");
-  const [blockedRangeFrom, setBlockedRangeFrom] = useState("");
-  const [blockedRangeTo, setBlockedRangeTo] = useState("");
 
   const load = useCallback(async () => {
     const supabase = getSupabaseBrowser();
@@ -915,46 +913,37 @@ export function AdminClient() {
     flash(t("Saved", "Guardado", lang));
   };
 
-  const saveOrderCalendar = async () => {
+  const persistOrderCalendar = async (body: OrderCalendarBody) => {
     const { error } = await supabase.from("site_pages").upsert({
       slug: "order-calendar",
-      body: orderCalendar,
+      body,
       updated_at: new Date().toISOString(),
     });
     if (error) {
       flash(error.message);
-      return;
+      return false;
     }
     flash(t("Order dates saved", "Fechas de pedido guardadas", lang));
+    return true;
   };
 
-  const addBlockedDate = () => {
-    const iso = newBlockedDate.trim();
+  const saveOrderCalendar = async () => {
+    await persistOrderCalendar(orderCalendar);
+  };
+
+  const addBlockedDateIso = (iso: string) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
       flash(t("Pick a valid date", "Elige una fecha válida", lang));
       return;
     }
     setOrderCalendar((c) => ({ blocked_dates: mergeBlockedDates(c.blocked_dates, [iso]) }));
-    setNewBlockedDate("");
+    flash(t("Day added", "Día agregado", lang));
   };
 
-  const addBlockedRange = () => {
-    const from = blockedRangeFrom.trim();
-    const to = blockedRangeTo.trim();
+  const addBlockedRangeFromTo = (from: string, to: string) => {
     const days = isoDatesInRange(from, to);
-    if (days.length === 0) {
-      flash(
-        t(
-          "Pick a valid from and to date (from must be on or before to).",
-          "Elige fechas válidas de inicio y fin (inicio debe ser antes o igual que fin).",
-          lang,
-        ),
-      );
-      return;
-    }
+    if (days.length === 0) return;
     setOrderCalendar((c) => ({ blocked_dates: mergeBlockedDates(c.blocked_dates, days) }));
-    setBlockedRangeFrom("");
-    setBlockedRangeTo("");
     flash(t(`Added ${days.length} date(s)`, `Se agregaron ${days.length} fecha(s)`, lang));
   };
 
@@ -2210,64 +2199,30 @@ export function AdminClient() {
           )}
         </p>
         <div className="space-y-3 rounded-2xl bg-white p-4 shadow-sm">
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="min-w-[10rem] flex-1">
-              <span className="mb-1 block text-xs font-medium text-coal/70">
-                {t("Single day", "Un día", lang)}
-              </span>
-              <input
-                type="date"
-                value={newBlockedDate}
-                onChange={(e) => setNewBlockedDate(e.target.value)}
-                className={inputClass}
-              />
-            </label>
-            <button
-              type="button"
-              onClick={addBlockedDate}
-              className="rounded-xl bg-berry px-4 py-2 text-sm font-medium text-white"
-            >
-              {t("Add", "Agregar", lang)}
-            </button>
-          </div>
+          <label className="block min-w-[10rem]">
+            <span className="mb-1 block text-xs font-medium text-coal/70">
+              {t("Single day", "Un día", lang)}
+            </span>
+            <AdminBlockSingleDayPicker
+              lang={lang}
+              fieldClassName={inputClass}
+              blockedDates={orderCalendar.blocked_dates}
+              onPick={addBlockedDateIso}
+            />
+          </label>
           <div className="flex flex-wrap items-end gap-2 border-t border-blush/40 pt-3">
             <label className="min-w-[10rem] flex-1">
               <span className="mb-1 block text-xs font-medium text-coal/70">
-                {t("From", "Desde", lang)}
+                {t("Date range", "Rango de fechas", lang)}
               </span>
-              <input
-                type="date"
-                value={blockedRangeFrom}
-                onChange={(e) => setBlockedRangeFrom(e.target.value)}
-                className={inputClass}
+              <AdminBlockRangePicker
+                lang={lang}
+                fieldClassName={inputClass}
+                blockedDates={orderCalendar.blocked_dates}
+                onRangeComplete={addBlockedRangeFromTo}
               />
             </label>
-            <label className="min-w-[10rem] flex-1">
-              <span className="mb-1 block text-xs font-medium text-coal/70">
-                {t("To", "Hasta", lang)}
-              </span>
-              <input
-                type="date"
-                value={blockedRangeTo}
-                onChange={(e) => setBlockedRangeTo(e.target.value)}
-                className={inputClass}
-              />
-            </label>
-            <button
-              type="button"
-              onClick={addBlockedRange}
-              className="rounded-xl bg-coal px-4 py-2 text-sm font-medium text-white"
-            >
-              {t("Add range", "Agregar rango", lang)}
-            </button>
           </div>
-          <p className="text-xs text-coal/60">
-            {t(
-              "Use a range for weekends or vacations (e.g. Saturday through Sunday).",
-              "Usa un rango para fines de semana o vacaciones (ej. sábado a domingo).",
-              lang,
-            )}
-          </p>
         </div>
         {orderCalendar.blocked_dates.length === 0 ? (
           <p className="text-sm text-coal/60">{t("No blocked dates yet.", "Aún no hay fechas bloqueadas.", lang)}</p>
@@ -2275,11 +2230,13 @@ export function AdminClient() {
           <BlockedDatesOffList
             blocked={orderCalendar.blocked_dates}
             lang={lang}
-            onRemove={(iso) => {
-              if (!confirmDelete(lang)) return;
-              setOrderCalendar((c) => ({
-                blocked_dates: c.blocked_dates.filter((d) => d !== iso),
-              }));
+            onRemoveMany={async (isos) => {
+              if (isos.length === 0) return false;
+              const body: OrderCalendarBody = {
+                blocked_dates: orderCalendar.blocked_dates.filter((d) => !isos.includes(d)),
+              };
+              setOrderCalendar(body);
+              return persistOrderCalendar(body);
             }}
           />
         )}
@@ -2313,19 +2270,98 @@ export function AdminClient() {
   );
 }
 
+function BlockedDatesRemoveWarning({
+  lang,
+  count,
+  dates,
+  onCancel,
+  onConfirm,
+}: {
+  lang: "en" | "es";
+  count: number;
+  dates: string[];
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const preview = dates.slice(0, 5);
+  const more = dates.length - preview.length;
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-coal/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="blocked-dates-warning-title"
+      onClick={onCancel}
+    >
+      <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-lg" onClick={(e) => e.stopPropagation()}>
+        <h4 id="blocked-dates-warning-title" className="text-base font-semibold text-coal">
+          {t("Remove blocked dates?", "¿Quitar fechas bloqueadas?", lang)}
+        </h4>
+        <p className="mt-2 text-sm text-coal/75">
+          {t(
+            "Customers will be able to order on these days again.",
+            "Los clientes podrán pedir en esos días otra vez.",
+            lang,
+          )}
+        </p>
+        <p className="mt-3 text-sm font-medium text-coal">
+          {count === 1
+            ? t("1 day selected", "1 día seleccionado", lang)
+            : t(`${count} days selected`, `${count} días seleccionados`, lang)}
+        </p>
+        <ul className="mt-1 max-h-28 overflow-y-auto text-xs text-coal/65">
+          {preview.map((iso) => (
+            <li key={iso}>{iso}</li>
+          ))}
+          {more > 0 ? (
+            <li>{t(`…and ${more} more`, `…y ${more} más`, lang)}</li>
+          ) : null}
+        </ul>
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-xl border border-blush/60 px-4 py-2 text-sm font-medium text-coal/80"
+          >
+            {t("Cancel", "Cancelar", lang)}
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="rounded-xl bg-berry px-4 py-2 text-sm font-medium text-white"
+          >
+            {t("Remove", "Quitar", lang)}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BlockedDatesOffList({
   blocked,
   lang,
-  onRemove,
+  onRemoveMany,
 }: {
   blocked: string[];
   lang: "en" | "es";
-  onRemove: (iso: string) => void;
+  onRemoveMany: (isos: string[]) => void | Promise<boolean | undefined>;
 }) {
   const ranges = useMemo(() => groupBlockedDatesIntoRanges(blocked), [blocked]);
   const [openKeys, setOpenKeys] = useState<Set<string>>(() => new Set());
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [pendingRemove, setPendingRemove] = useState<string[] | null>(null);
 
-  const toggle = (key: string) => {
+  useEffect(() => {
+    setSelected((prev) => {
+      const blockedSet = new Set(blocked);
+      const next = new Set([...prev].filter((d) => blockedSet.has(d)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [blocked]);
+
+  const toggleOpen = (key: string) => {
     setOpenKeys((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
@@ -2334,13 +2370,54 @@ function BlockedDatesOffList({
     });
   };
 
+  const setDatesSelected = (dates: string[], on: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const iso of dates) {
+        if (on) next.add(iso);
+        else next.delete(iso);
+      }
+      return next;
+    });
+  };
+
+  const removeSelected = () => {
+    const isos = [...selected].sort();
+    if (isos.length === 0) return;
+    setPendingRemove(isos);
+  };
+
+  const confirmPendingRemove = () => {
+    if (!pendingRemove?.length) return;
+    void Promise.resolve(onRemoveMany(pendingRemove)).then((ok) => {
+      if (ok === false) return;
+      setSelected(new Set());
+      setPendingRemove(null);
+    });
+  };
+
+  const selectedCount = selected.size;
+
   return (
-    <div className="space-y-2 rounded-2xl bg-white p-4 shadow-sm">
+    <div className="space-y-3 rounded-2xl bg-white p-4 shadow-sm">
+      {pendingRemove ? (
+        <BlockedDatesRemoveWarning
+          lang={lang}
+          count={pendingRemove.length}
+          dates={pendingRemove}
+          onCancel={() => setPendingRemove(null)}
+          onConfirm={confirmPendingRemove}
+        />
+      ) : null}
       <h3 className="text-sm font-medium text-coal/80">{t("Days off", "Días libres", lang)}</h3>
       <ul className="divide-y divide-blush/30">
         {ranges.map((range) => {
           const key = blockedRangeKey(range);
           const open = openKeys.has(key);
+          const sortedDates = [...range.dates].sort();
+          const rangeSelected = sortedDates.filter((d) => selected.has(d)).length;
+          const rangeAll = rangeSelected === sortedDates.length;
+          const rangeSome = rangeSelected > 0 && !rangeAll;
           const label =
             range.from === range.to
               ? range.from
@@ -2352,36 +2429,48 @@ function BlockedDatesOffList({
 
           return (
             <li key={key} className="py-2 first:pt-0 last:pb-0">
-              <button
-                type="button"
-                onClick={() => toggle(key)}
-                className="flex w-full items-center gap-2 text-left text-sm text-coal"
-                aria-expanded={open}
-              >
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 16 16"
-                  className={`shrink-0 text-coal/50 transition-transform ${open ? "rotate-90" : ""}`}
-                  aria-hidden
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 shrink-0 rounded border-coal/30 accent-berry"
+                  checked={rangeAll}
+                  ref={(el) => {
+                    if (el) el.indeterminate = rangeSome;
+                  }}
+                  aria-label={t("Select range", "Seleccionar rango", lang)}
+                  onChange={(e) => setDatesSelected(sortedDates, e.target.checked)}
+                />
+                <button
+                  type="button"
+                  onClick={() => toggleOpen(key)}
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm text-coal"
+                  aria-expanded={open}
                 >
-                  <path d="M6 4L10 8L6 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-                </svg>
-                <span className="font-medium">{label}</span>
-                <span className="text-coal/50">({countLabel})</span>
-              </button>
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 16 16"
+                    className={`shrink-0 text-coal/50 transition-transform ${open ? "rotate-90" : ""}`}
+                    aria-hidden
+                  >
+                    <path d="M6 4L10 8L6 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                  </svg>
+                  <span className="font-medium">{label}</span>
+                  <span className="text-coal/50">({countLabel})</span>
+                </button>
+              </div>
               {open ? (
                 <ul className="mt-2 space-y-1 border-l-2 border-blush/40 pl-6">
-                  {range.dates.map((iso) => (
-                    <li key={iso} className="flex items-center justify-between gap-3 text-sm text-coal/80">
+                  {sortedDates.map((iso) => (
+                    <li key={iso} className="flex items-center gap-2 text-sm text-coal/80">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-coal/30 accent-berry"
+                        checked={selected.has(iso)}
+                        aria-label={iso}
+                        onChange={(e) => setDatesSelected([iso], e.target.checked)}
+                      />
                       <span>{iso}</span>
-                      <button
-                        type="button"
-                        onClick={() => onRemove(iso)}
-                        className="text-coal/50 hover:text-berry hover:underline"
-                      >
-                        {t("Remove", "Quitar", lang)}
-                      </button>
                     </li>
                   ))}
                 </ul>
@@ -2390,6 +2479,16 @@ function BlockedDatesOffList({
           );
         })}
       </ul>
+      <button
+        type="button"
+        disabled={selectedCount === 0}
+        onClick={removeSelected}
+        className="rounded-xl bg-coal px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {selectedCount > 0
+          ? t(`Remove (${selectedCount})`, `Quitar (${selectedCount})`, lang)
+          : t("Remove", "Quitar", lang)}
+      </button>
     </div>
   );
 }
