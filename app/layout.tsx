@@ -1,7 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Lilita_One, Montserrat } from "next/font/google";
-import { RootLayoutClient } from "./layout-client";
-import { shop } from "@/lib/shop";
+import { LayoutShell } from "./LayoutShell";
+import { fetchSpecialsBody, specialIsVisible } from "@/lib/specials";
+import { localDateIso, shop } from "@/lib/shop";
 import "./globals.css";
 
 const lilita = Lilita_One({
@@ -31,11 +32,14 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const specials = await fetchSpecialsBody();
+  const showSpecialsNav = specialIsVisible(specials, localDateIso());
+
   return (
     <html lang="en" className={`${lilita.variable} ${montserrat.variable}`}>
       <body className="antialiased">
-        <RootLayoutClient>{children}</RootLayoutClient>
+        <LayoutShell showSpecialsNav={showSpecialsNav}>{children}</LayoutShell>
       </body>
     </html>
   );

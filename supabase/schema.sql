@@ -454,7 +454,7 @@ values (
   'offer-images',
   'offer-images',
   true,
-  8388608,
+  52428800,
   array['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 )
 on conflict (id) do update set

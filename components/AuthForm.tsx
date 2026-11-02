@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/lang";
 import { t } from "@/lib/format";
@@ -21,22 +21,24 @@ function GoogleLogo() {
   );
 }
 
-function FacebookLogo() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden>
-      <path
-        fill="#1877F2"
-        d="M24 12.07C24 5.41 18.63 0 12 0S0 5.41 0 12.07C0 18.1 4.39 23.09 10.13 24v-8.44H7.08v-3.49h3.05V9.41c0-3.02 1.79-4.7 4.54-4.7 1.31 0 2.68.24 2.68.24v2.96h-1.51c-1.49 0-1.95.93-1.95 1.89v2.26h3.32l-.53 3.49h-2.79V24C19.61 23.09 24 18.1 24 12.07z"
-      />
-    </svg>
-  );
-}
-
 type Mode = "login" | "signup";
+
+function friendlyAuthError(raw: string, lang: "en" | "es"): string {
+  const lower = raw.toLowerCase();
+  if (lower.includes("provider is not enabled") || lower.includes("unsupported provider")) {
+    return t(
+      "Google sign-in is not turned on yet. Use email and password, or ask the shop owner to enable Google in Supabase.",
+      "El inicio con Google aún no está activado. Usa correo y contraseña, o pide al administrador que active Google en Supabase.",
+      lang,
+    );
+  }
+  return raw;
+}
 
 export function AuthForm({ mode }: { mode: Mode }) {
   const { lang } = useLang();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { configured, signIn, signUp, signInWithOAuth } = useAuth();
 
   const [name, setName] = useState("");
@@ -48,6 +50,10 @@ export function AuthForm({ mode }: { mode: Mode }) {
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  useEffect(() => {
+    const fromUrl = searchParams.get("error");
+    if (fromUrl) setError(friendlyAuthError(fromUrl, lang));
+  }, [searchParams, lang]);
 
   if (!configured) {
     return (
@@ -111,10 +117,10 @@ export function AuthForm({ mode }: { mode: Mode }) {
     }
   };
 
-  const handleOAuth = async (provider: "google" | "facebook") => {
+  const handleGoogleSignIn = async () => {
     setError("");
-    const result = await signInWithOAuth(provider);
-    if (result.error) setError(result.error);
+    const result = await signInWithOAuth();
+    if (result.error) setError(friendlyAuthError(result.error, lang));
   };
 
   return (
@@ -237,25 +243,14 @@ export function AuthForm({ mode }: { mode: Mode }) {
         <span className="text-xs text-coal/50">{t("or", "o", lang)}</span>
         <div className="h-px flex-1 bg-blush/60" />
       </div>
-
-      <div className="space-y-3">
-        <button
-          type="button"
-          onClick={() => handleOAuth("google")}
-          className="flex w-full items-center justify-center gap-2 rounded-full border border-coal/15 bg-white px-5 py-3 text-sm font-medium text-coal transition-colors hover:border-berry/40 hover:text-berry"
-        >
-          <GoogleLogo />
-          {t("Continue with Google", "Continuar con Google", lang)}
-        </button>
-        <button
-          type="button"
-          onClick={() => handleOAuth("facebook")}
-          className="flex w-full items-center justify-center gap-2 rounded-full border border-coal/15 bg-white px-5 py-3 text-sm font-medium text-coal transition-colors hover:border-berry/40 hover:text-berry"
-        >
-          <FacebookLogo />
-          {t("Continue with Facebook", "Continuar con Facebook", lang)}
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={() => void handleGoogleSignIn()}
+        className="flex w-full items-center justify-center gap-2 rounded-full border border-coal/15 bg-white px-5 py-3 text-sm font-medium text-coal transition-colors hover:border-berry/40 hover:text-berry"
+      >
+        <GoogleLogo />
+        {t("Continue with Google", "Continuar con Google", lang)}
+      </button>
 
       <p className="mt-6 text-center text-sm text-coal/70">
         {mode === "login" ? (

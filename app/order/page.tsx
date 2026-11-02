@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { CartBar } from "@/components/CartBar";
+import { SpecialsSection } from "@/components/SpecialsSection";
 import { ProductCard } from "@/components/ProductCard";
 import { CATEGORIES, PRODUCTS, fetchCatalog } from "@/lib/catalog";
 import { useLang } from "@/lib/lang";
@@ -79,6 +80,10 @@ export default function OrderPage() {
       <p className="mt-1 text-sm text-coal/70">
         {t("Tap an item to customize", "Toca un producto para personalizar", lang)}
       </p>
+
+      <div className="mt-4">
+        <SpecialsSection />
+      </div>
 
       <div className="mt-6 md:mt-8 md:flex md:gap-10 lg:gap-14">
         <aside className="mb-6 shrink-0 md:mb-0 md:w-44 lg:w-52">{categoryNav}</aside>

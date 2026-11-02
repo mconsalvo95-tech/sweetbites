@@ -8,19 +8,22 @@ import { useLang } from "@/lib/lang";
 import { t } from "@/lib/format";
 
 export type HomeSlide = {
-  imageUrl: string;
+  imageUrl?: string;
   tagEn?: string;
   tagEs?: string;
   titleEn?: string;
   titleEs?: string;
   offerEn?: string;
   offerEs?: string;
+  offerLineClamp?: boolean;
   quoteEn?: string;
   quoteEs?: string;
   name?: string;
   cityEn?: string;
   cityEs?: string;
   ctaHref?: string;
+  ctaLabelEn?: string;
+  ctaLabelEs?: string;
 };
 
 type HomeSliderProps = {
@@ -115,7 +118,9 @@ export function HomeSlider({ slides, variant, ariaLabelEn, ariaLabelEs }: HomeSl
           className="flex transition-transform duration-500 ease-out motion-reduce:transition-none"
           style={{ transform: `translateX(-${index * 100}%)` }}
         >
-          {slides.map((slide, i) => (
+          {slides.map((slide, i) => {
+            const imageUrl = slide.imageUrl?.trim() ?? "";
+            return (
             <article
               key={i}
               className={`relative w-full min-w-full shrink-0 basis-full ${
@@ -125,17 +130,23 @@ export function HomeSlider({ slides, variant, ariaLabelEn, ariaLabelEs }: HomeSl
               }`}
               aria-hidden={i !== index}
             >
-              <Image
-                src={slide.imageUrl}
-                alt=""
-                fill
-                unoptimized={slide.imageUrl.startsWith("http")}
-                className="object-cover object-center"
-                sizes="100vw"
-                priority={i === 0}
-              />
+              {imageUrl ? (
+                <Image
+                  src={imageUrl}
+                  alt=""
+                  fill
+                  unoptimized={imageUrl.startsWith("http")}
+                  className="object-cover object-center"
+                  sizes="100vw"
+                  priority={i === 0}
+                />
+              ) : variant === "promo" ? (
+                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/60 to-black/45" aria-hidden />
+              ) : null}
               {variant === "promo" ? (
-                <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black via-black/80 to-transparent sm:from-black/55 sm:via-transparent" />
+                imageUrl ? (
+                  <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black via-black/80 to-transparent sm:from-black/55 sm:via-transparent" />
+                ) : null
               ) : (
                 <div className="absolute inset-0 bg-gradient-to-r from-berry/80 via-berry/55 to-blush/40" />
               )}
@@ -157,7 +168,11 @@ export function HomeSlider({ slides, variant, ariaLabelEn, ariaLabelEs }: HomeSl
                     <h3 className="max-w-full break-words font-display text-lg uppercase leading-tight text-white sm:text-3xl">
                       {t(slide.titleEn ?? "", slide.titleEs ?? "", lang)}
                     </h3>
-                    <p className="mt-1.5 max-w-full break-words text-sm text-white/90 line-clamp-2 sm:mt-2 sm:max-w-xl sm:text-base sm:line-clamp-none">
+                    <p
+                      className={`mt-1.5 max-w-full break-words text-sm text-white/90 line-clamp-2 sm:mt-2 sm:max-w-xl sm:text-base${
+                        slide.offerLineClamp ? "" : " sm:line-clamp-none"
+                      }`}
+                    >
                       {t(slide.offerEn ?? "", slide.offerEs ?? "", lang)}
                     </p>
                     {slide.ctaHref && (
@@ -167,7 +182,7 @@ export function HomeSlider({ slides, variant, ariaLabelEn, ariaLabelEs }: HomeSl
                         onMouseDown={(e) => e.stopPropagation()}
                         className="btn-primary mt-4 inline-flex w-fit rounded-full bg-white px-5 py-2 text-sm font-semibold text-berry"
                       >
-                        {t("Order now", "Pedir ahora", lang)}
+                        {t(slide.ctaLabelEn ?? "Order now", slide.ctaLabelEs ?? "Pedir ahora", lang)}
                       </Link>
                     )}
                   </div>
@@ -189,7 +204,8 @@ export function HomeSlider({ slides, variant, ariaLabelEn, ariaLabelEs }: HomeSl
                 )}
               </div>
             </article>
-          ))}
+          );
+          })}
         </div>
 
         {slides.length > 1 && (

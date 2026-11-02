@@ -25,7 +25,17 @@ import {
   serializeProductImages,
 } from "../lib/product-images";
 import { addressFromPhoton, provinceCode } from "../lib/address-search";
-import { isAllowedWantedOn, localDateIso, minWantedOnIso, wantedNote, wantedOnFromNotes } from "../lib/shop";
+import {
+  isAllowedWantedOn,
+  localDateIso,
+  minWantedOnIso,
+  nextAllowedWantedOn,
+  wantedNote,
+  wantedOnFromNotes,
+} from "../lib/shop";
+import { mergeSpecialsBody, mirrorSpecialsEnToEs, specialIsVisible } from "../lib/specials";
+import { groupBlockedDatesIntoRanges, isoDatesInRange, mergeBlockedDates } from "../lib/order-calendar";
+
 const LOCAL_FILE = join(process.cwd(), ".local-orders.json");
 
 function assert(cond: unknown, msg: string): asserts cond {
@@ -42,7 +52,24 @@ async function main() {
   assert(!isAllowedWantedOn("2026-10-01", fixedToday), "same-day order date should fail");
   assert(!isAllowedWantedOn("2026-10-02", fixedToday), "next-day order date should fail");
   assert(isAllowedWantedOn("2026-10-03", fixedToday), "earliest allowed date should pass");
+  assert(!isAllowedWantedOn("2026-12-24", fixedToday, ["2026-12-24"]), "blocked calendar date should fail");
   assert(!isAllowedWantedOn("soon", fixedToday), "non-ISO date string should fail");
+
+  assert(
+    isoDatesInRange("2026-12-26", "2026-12-27").join(",") === "2026-12-26,2026-12-27",
+    "weekend range should include both days",
+  );
+  assert(isoDatesInRange("2026-12-27", "2026-12-26").length === 0, "reversed range should be empty");
+  assert(
+    mergeBlockedDates(["2026-12-24"], ["2026-12-26", "2026-12-27"]).join(",") === "2026-12-24,2026-12-26,2026-12-27",
+    "merge should dedupe and sort",
+  );
+  const grouped = groupBlockedDatesIntoRanges(["2026-11-05", "2026-11-06", "2026-11-08"]);
+  assert(grouped.length === 2 && grouped[0].dates.length === 2, "consecutive days should group into ranges");
+  assert(
+    nextAllowedWantedOn("2026-10-03", ["2026-10-03", "2026-10-04"], fixedToday) === "2026-10-05",
+    "next allowed should skip blocked days",
+  );
 
   assert(provinceCode("Alberta") === "AB", "Alberta should map to AB");
   assert(provinceCode("Québec") === "QC", "Québec should map to QC");
@@ -342,7 +369,37 @@ async function main() {
   const sqSig = expectedSquareSignature(sqUrl, sqBody, "square-test-key");
   assert(verifySquareSignature(sqUrl, sqBody, sqSig, "square-test-key"), "Square signature should verify");
   assert(!verifySquareSignature(sqUrl, sqBody, "nope", "square-test-key"), "Bad Square signature should fail");
+
+  const specialCfg = { enabled: true, starts_on: "2026-10-01", ends_on: "2026-10-31" };
+  assert(specialIsVisible(specialCfg, "2026-10-15"), "special should be visible inside date range");
+  assert(!specialIsVisible(specialCfg, "2026-09-30"), "special should be hidden before start");
+  assert(!specialIsVisible(specialCfg, "2026-11-01"), "special should be hidden after end");
+  assert(!specialIsVisible({ ...specialCfg, enabled: false }, "2026-10-15"), "disabled special should be hidden");
+  assert(!specialIsVisible({ enabled: true, starts_on: "", ends_on: "2026-10-31" }, "2026-10-15"), "missing start date should hide");
+
+  assert(mergeSpecialsBody({ theme: "christmas" }).theme === "christmas", "merge should keep christmas theme");
+  assert(mergeSpecialsBody({ theme: "halloween" }).theme === "", "unknown theme should default to none");
+  assert(mergeSpecialsBody({}).theme === "", "missing theme should default to none");
+
+  const mirrored = mirrorSpecialsEnToEs({
+    enabled: false,
+    theme: "christmas",
+    starts_on: "",
+    ends_on: "",
+    title_en: "Fall",
+    title_es: "old",
+    message_en: "Hi",
+    message_es: "viejo",
+    image_url: "",
+    items: [{ name_en: "Cookie", name_es: "galleta", price_cents: 500, note_en: "yum", note_es: "rico", image_url: "" }],
+  });
+  assert(mirrored.title_es === "Fall", "mirror should copy title_en to title_es");
+  assert(mirrored.message_es === "Hi", "mirror should copy message_en to message_es");
+  assert(mirrored.items[0]?.name_es === "Cookie", "mirror should copy item name_en to name_es");
+  assert(mirrored.items[0]?.note_es === "yum", "mirror should copy item note_en to note_es");
+  assert(mirrored.theme === "christmas", "mirror should preserve theme");
 }
+
 
 main().catch((err) => {
   console.error("SELF-CHECK FAILED:", err.message ?? err);

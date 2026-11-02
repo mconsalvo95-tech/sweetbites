@@ -34,7 +34,7 @@ type AuthContextValue = {
   configured: boolean;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signUp: (name: string, email: string, password: string) => Promise<{ error?: string; needsConfirmation?: boolean }>;
-  signInWithOAuth: (provider: "google" | "facebook") => Promise<{ error?: string }>;
+  signInWithOAuth: () => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   updateProfile: (patch: Partial<Pick<Profile, "display_name" | "phone" | "newsletter" | "address_street" | "address_city" | "address_province" | "address_postal">>) => Promise<{ error?: string }>;
@@ -129,13 +129,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return {};
   }, []);
 
-  const signInWithOAuth = useCallback(async (provider: "google" | "facebook") => {
+  const signInWithOAuth = useCallback(async () => {
     const supabase = getSupabaseBrowser();
     if (!supabase) return { error: "Auth not configured" };
     const origin = window.location.origin;
     const { error } = await supabase.auth.signInWithOAuth({
-      provider,
-      options: { redirectTo: `${origin}/auth/callback` },
+      provider: "google",
+      options: {
+        redirectTo: `${origin}/auth/callback`,
+        queryParams: { access_type: "offline", prompt: "consent" },
+      },
     });
     return error ? { error: error.message } : {};
   }, []);

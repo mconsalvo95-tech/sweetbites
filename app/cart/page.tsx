@@ -14,7 +14,9 @@ import {
   pickName,
   t,
 } from "@/lib/format";
-import { isAllowedWantedOn, minWantedOnIso, WANTED_ON_RE } from "@/lib/shop";
+import { CompactOrderDateField } from "@/components/CompactOrderDateField";
+import { fetchOrderCalendarBrowser, isBlockedOrderDate } from "@/lib/order-calendar";
+import { isAllowedWantedOn, minWantedOnIso, nextAllowedWantedOn, WANTED_ON_RE } from "@/lib/shop";
 import { searchCanadianAddresses, type AddressHit } from "@/lib/address-search";
 import { primaryProductImage } from "@/lib/product-images";
 import { PickupHint } from "@/components/FulfillmentPicker";
@@ -69,6 +71,7 @@ export default function CartPage() {
   const [promoBusy, setPromoBusy] = useState(false);
   const [applied, setApplied] = useState<{ code: string; discountCents: number } | null>(null);
   const [canceled, setCanceled] = useState(false);
+  const [blockedDates, setBlockedDates] = useState<string[]>([]);
 
   const shippingCents = useMemo(() => {
     if (fulfillment === "pickup") return 0;
@@ -77,10 +80,21 @@ export default function CartPage() {
 
   const discountCents = applied?.discountCents ?? 0;
   const totalCents = foodTotalCents - discountCents + shippingCents;
-
   useEffect(() => {
     setCanceled(new URLSearchParams(window.location.search).get("canceled") === "1");
   }, []);
+
+  useEffect(() => {
+    void fetchOrderCalendarBrowser().then((body) => setBlockedDates(body.blocked_dates));
+  }, []);
+
+  useEffect(() => {
+    if (blockedDates.length === 0) return;
+    setWantedOn((current) => {
+      if (isAllowedWantedOn(current, new Date(), blockedDates)) return current;
+      return nextAllowedWantedOn(current, blockedDates);
+    });
+  }, [blockedDates]);
 
   useEffect(() => {
     if (!user) return;
@@ -278,13 +292,19 @@ export default function CartPage() {
       setError(t("Pick a pickup or ship date", "Elige una fecha de recogida o envío", lang));
       return;
     }
-    if (!isAllowedWantedOn(wantedOn)) {
+    if (!isAllowedWantedOn(wantedOn, new Date(), blockedDates)) {
       setError(
-        t(
-          "Orders require a minimum of 2 days’ notice. Same-day and next-day orders are not available.",
-          "Los pedidos requieren un mínimo de 2 días de anticipación. No hay pedidos para hoy ni para mañana.",
-          lang,
-        ),
+        isBlockedOrderDate(wantedOn, blockedDates)
+          ? t(
+              "That date is not available. Please pick another day.",
+              "Esa fecha no está disponible. Elige otro día.",
+              lang,
+            )
+          : t(
+              "Orders require a minimum of 2 days’ notice. Same-day and next-day orders are not available.",
+              "Los pedidos requieren un mínimo de 2 días de anticipación. No hay pedidos para hoy ni para mañana.",
+              lang,
+            ),
       );
       return;
     }
@@ -481,19 +501,32 @@ export default function CartPage() {
             </button>
           ))}
         </div>
-        <label className="mt-4 block text-sm font-medium text-coal/80">
-          {fulfillment === "ship"
-            ? t("Ship date", "Fecha de envío", lang)
-            : t("Pickup date", "Fecha de recogida", lang)}
-          <input
-            type="date"
-            required
-            min={minWantedOnIso()}
+        <div className="mt-4">
+          <label htmlFor="wanted-on" className="text-sm font-medium text-coal/80">
+            {fulfillment === "ship"
+              ? t("Ship date", "Fecha de envío", lang)
+              : t("Pickup date", "Fecha de recogida", lang)}
+          </label>
+          <CompactOrderDateField
+            id="wanted-on"
+            lang={lang}
             value={wantedOn}
-            onChange={(e) => setWantedOn(e.target.value)}
-            className="input-field mt-2"
+            blockedDates={blockedDates}
+            onChange={(iso) => {
+              setError("");
+              setWantedOn(iso);
+            }}
+            onBlockedPick={() =>
+              setError(
+                t(
+                  "That date is not available. Please pick another day.",
+                  "Esa fecha no está disponible. Elige otro día.",
+                  lang,
+                ),
+              )
+            }
           />
-        </label>
+        </div>
         <p className="mt-2 text-xs text-coal/65">
           {t(
             "Orders require a minimum of 2 days’ notice. Same-day and next-day orders are not available.",

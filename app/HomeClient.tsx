@@ -1,30 +1,55 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo } from "react";
 import { useLang } from "@/lib/lang";
 import { t } from "@/lib/format";
 import { HomeCta } from "@/components/FulfillmentPicker";
 import { HomeSlider, type HomeSlide } from "@/components/HomeSlider";
-import { InquiryForm } from "@/components/InquiryForm";
 import { SocialLinks } from "@/components/SocialLinks";
+import { SpecialsSection } from "@/components/SpecialsSection";
 import { useSitePageBody, type AboutBody } from "@/lib/site-pages";
+import { localDateIso } from "@/lib/shop";
+import { specialIsVisible, type SpecialsBody } from "@/lib/specials";
+
+function specialPromoSlide(body: SpecialsBody): HomeSlide {
+  const imageUrl = body.image_url.trim();
+  return {
+    ...(imageUrl ? { imageUrl } : {}),
+    titleEn: body.title_en || body.title_es,
+    titleEs: body.title_es || body.title_en,
+    offerEn: body.message_en || body.message_es,
+    offerEs: body.message_es || body.message_en,
+    offerLineClamp: true,
+    ctaHref: "/specials",
+    ctaLabelEn: "Specials",
+    ctaLabelEs: "Especiales",
+  };
+}
 
 export function HomePageContent({
   promoSlides,
   reviewSlides,
+  specials,
 }: {
   promoSlides: HomeSlide[];
   reviewSlides: HomeSlide[];
+  specials?: SpecialsBody | null;
 }) {
   const { lang } = useLang();
   const about = useSitePageBody("about") as AboutBody;
 
+  const promoWithSpecial = useMemo(() => {
+    if (!specials || !specialIsVisible(specials, localDateIso())) return promoSlides;
+    return [specialPromoSlide(specials), ...promoSlides];
+  }, [promoSlides, specials]);
+
   return (
     <div className="flex flex-1 flex-col">
       <div className="relative z-10 space-y-1">
-        {promoSlides.length > 0 && (
+        {promoWithSpecial.length > 0 && (
           <HomeSlider
-            slides={promoSlides}
+            slides={promoWithSpecial}
             variant="promo"
             ariaLabelEn="Weekly promotions"
             ariaLabelEs="Promociones de la semana"
@@ -57,17 +82,13 @@ export function HomePageContent({
           </div>
         </section>
 
+        <SpecialsSection initial={specials ?? undefined} />
+
         <section className="mt-auto rounded-[18px] bg-white p-5 shadow-sm">
           <h2 className="font-display text-lg uppercase text-coal">
             {t("Follow us", "Síguenos", lang)}
           </h2>
           <SocialLinks lang={lang} className="mt-4 justify-center" />
-          <div className="mt-6">
-            <p className="mb-2 text-sm font-medium text-coal">
-              {t("Get our newest updates", "Recibe nuestras novedades", lang)}
-            </p>
-            <InquiryForm type="newsletter" />
-          </div>
         </section>
       </div>
     </div>

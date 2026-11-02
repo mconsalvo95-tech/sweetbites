@@ -9,6 +9,22 @@ import { formatCad, t } from "@/lib/format";
 import { parseProductImages, serializeProductImages } from "@/lib/product-images";
 import { DEFAULT_REVIEW_IMAGE, FALLBACK_REVIEW_ITEMS, type ReviewItem } from "@/lib/reviews";
 import { FALLBACK_PROMO_SLIDES } from "@/lib/weekly-offers";
+import {
+  DEFAULT_SPECIALS,
+  emptySpecialItem,
+  mergeSpecialsBody,
+  mirrorSpecialsEnToEs,
+  type SpecialsBody,
+} from "@/lib/specials";
+import {
+  blockedRangeKey,
+  DEFAULT_ORDER_CALENDAR,
+  groupBlockedDatesIntoRanges,
+  isoDatesInRange,
+  mergeBlockedDates,
+  type OrderCalendarBody,
+} from "@/lib/order-calendar";
+import { OFFER_IMAGE_TYPES, prepareImageForUpload } from "@/lib/image-upload";
 import { getSupabaseBrowser } from "@/lib/supabase-browser";
 import type { PromoKind } from "@/lib/promos";
 import {
@@ -90,9 +106,11 @@ const ADMIN_TABS = [
   { id: "orders", labelEn: "Orders", labelEs: "Pedidos" },
   { id: "menu", labelEn: "Menu prices", labelEs: "Precios del menú" },
   { id: "offers", labelEn: "Weekly offers", labelEs: "Ofertas de la semana" },
+  { id: "specials", labelEn: "Specials", labelEs: "Especiales" },
   { id: "reviews", labelEn: "Reviews", labelEs: "Reseñas" },
   { id: "promos", labelEn: "Promo codes", labelEs: "Códigos de promo" },
   { id: "pages", labelEn: "Pages", labelEs: "Páginas" },
+  { id: "calendar", labelEn: "Order dates", labelEs: "Fechas de pedido" },
   { id: "access", labelEn: "Owner access", labelEs: "Acceso de dueña" },
 ] as const;
 
@@ -361,22 +379,21 @@ function slugify(raw: string) {
     .slice(0, 40);
 }
 
-const OFFER_IMAGE_TYPES: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/webp": "webp",
-  "image/gif": "gif",
-};
+function confirmDelete(lang: "en" | "es", message?: string): boolean {
+  return window.confirm(
+    message ?? t("Are you sure you want to delete this?", "¿Seguro que quieres borrar esto?", lang),
+  );
+}
 
 async function uploadAdminImage(file: File) {
   const supabase = getSupabaseBrowser();
   if (!supabase) throw new Error("Supabase is not configured");
-  const ext = OFFER_IMAGE_TYPES[file.type];
+  const prepared = await prepareImageForUpload(file);
+  const ext = OFFER_IMAGE_TYPES[prepared.type];
   if (!ext) throw new Error("Use a JPG, PNG, WebP, or GIF");
-  if (file.size > 8 * 1024 * 1024) throw new Error("Keep the image under 8 MB");
   const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-  const { error } = await supabase.storage.from("offer-images").upload(path, file, {
-    contentType: file.type,
+  const { error } = await supabase.storage.from("offer-images").upload(path, prepared, {
+    contentType: prepared.type,
     upsert: false,
   });
   if (error) throw error;
@@ -410,12 +427,11 @@ export function AdminClient() {
   const [newGroupNameEn, setNewGroupNameEn] = useState("");
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [openOrderId, setOpenOrderId] = useState<string | null>(null);
-  const [eraseArmed, setEraseArmed] = useState(false);
-  const [removeCategoryArmedId, setRemoveCategoryArmedId] = useState<string | null>(null);
   const [addProductError, setAddProductError] = useState("");
   const [offers, setOffers] = useState<OfferRow[]>([]);
   const [offersVirtual, setOffersVirtual] = useState(false);
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
+  const [specials, setSpecials] = useState<SpecialsBody>({ ...DEFAULT_SPECIALS });
   const [draftReview, setDraftReview] = useState<ReviewItem>(emptyReview);
   const [status, setStatus] = useState("");
   const [grantEmail, setGrantEmail] = useState("");
@@ -430,15 +446,21 @@ export function AdminClient() {
   const [pageBody, setPageBody] = useState<Record<string, unknown>>(SITE_PAGE_DEFAULTS.about);
 
   const [draftOffer, setDraftOffer] = useState<OfferRow>(emptyOffer);
+  const [orderCalendar, setOrderCalendar] = useState<OrderCalendarBody>({ ...DEFAULT_ORDER_CALENDAR });
+  const [newBlockedDate, setNewBlockedDate] = useState("");
+  const [blockedRangeFrom, setBlockedRangeFrom] = useState("");
+  const [blockedRangeTo, setBlockedRangeTo] = useState("");
 
   const load = useCallback(async () => {
     const supabase = getSupabaseBrowser();
     if (!supabase) return;
-    const [{ data: promoData }, { data: offerData }, { data: reviewPage }, { data: productData }, { data: orderData }, { data: catData }] =
+    const [{ data: promoData }, { data: offerData }, { data: reviewPage }, { data: specialsPage }, { data: calendarPage }, { data: productData }, { data: orderData }, { data: catData }] =
       await Promise.all([
         supabase.from("promo_codes").select("*").order("code"),
         supabase.from("weekly_offers").select("*").order("sort"),
         supabase.from("site_pages").select("body").eq("slug", "reviews").maybeSingle(),
+        supabase.from("site_pages").select("body").eq("slug", "specials").maybeSingle(),
+        supabase.from("site_pages").select("body").eq("slug", "order-calendar").maybeSingle(),
         supabase.from("products").select("id, name_en, name_es, slug, price_cents, active, category_id, image_url").order("name_en"),
         supabase
           .from("orders")
@@ -461,6 +483,13 @@ export function AdminClient() {
         ? savedReviews
         : FALLBACK_REVIEW_ITEMS.map((row) => ({ ...row })),
     );
+    setSpecials(mergeSpecialsBody(specialsPage?.body));
+    const blockedRaw = (calendarPage?.body as OrderCalendarBody | null)?.blocked_dates;
+    setOrderCalendar({
+      blocked_dates: Array.isArray(blockedRaw)
+        ? [...new Set(blockedRaw.filter((d): d is string => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d)))].sort()
+        : [],
+    });
     const dbOffers = (offerData as OfferRow[]) ?? [];
     if (dbOffers.length === 0) {
       setOffersVirtual(true);
@@ -722,6 +751,22 @@ export function AdminClient() {
     await load();
   };
 
+  const saveSpecials = async () => {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) return;
+    const body = mirrorSpecialsEnToEs(specials);
+    const { error } = await supabase.from("site_pages").upsert({
+      slug: "specials",
+      body,
+      updated_at: new Date().toISOString(),
+    });
+    if (error) {
+      flash(error.message);
+      return;
+    }
+    flash(t("Saved", "Guardado", lang));
+  };
+
   const writeReviews = async (items: ReviewItem[]) => {
     const supabase = getSupabaseBrowser();
     if (!supabase) return;
@@ -849,6 +894,14 @@ export function AdminClient() {
     );
   };
 
+  const uploadSpecialsImage = async (file: File, apply: (url: string) => void) => {
+    try {
+      apply(await uploadAdminImage(file));
+    } catch (err) {
+      flash(err instanceof Error ? err.message : t("Upload failed", "No se pudo subir", lang));
+    }
+  };
+
   const saveSitePage = async () => {
     const { error } = await supabase.from("site_pages").upsert({
       slug: pageSlug,
@@ -860,6 +913,49 @@ export function AdminClient() {
       return;
     }
     flash(t("Saved", "Guardado", lang));
+  };
+
+  const saveOrderCalendar = async () => {
+    const { error } = await supabase.from("site_pages").upsert({
+      slug: "order-calendar",
+      body: orderCalendar,
+      updated_at: new Date().toISOString(),
+    });
+    if (error) {
+      flash(error.message);
+      return;
+    }
+    flash(t("Order dates saved", "Fechas de pedido guardadas", lang));
+  };
+
+  const addBlockedDate = () => {
+    const iso = newBlockedDate.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+      flash(t("Pick a valid date", "Elige una fecha válida", lang));
+      return;
+    }
+    setOrderCalendar((c) => ({ blocked_dates: mergeBlockedDates(c.blocked_dates, [iso]) }));
+    setNewBlockedDate("");
+  };
+
+  const addBlockedRange = () => {
+    const from = blockedRangeFrom.trim();
+    const to = blockedRangeTo.trim();
+    const days = isoDatesInRange(from, to);
+    if (days.length === 0) {
+      flash(
+        t(
+          "Pick a valid from and to date (from must be on or before to).",
+          "Elige fechas válidas de inicio y fin (inicio debe ser antes o igual que fin).",
+          lang,
+        ),
+      );
+      return;
+    }
+    setOrderCalendar((c) => ({ blocked_dates: mergeBlockedDates(c.blocked_dates, days) }));
+    setBlockedRangeFrom("");
+    setBlockedRangeTo("");
+    flash(t(`Added ${days.length} date(s)`, `Se agregaron ${days.length} fecha(s)`, lang));
   };
 
   const deleteProductById = async (id: string): Promise<{ ok: true } | { ok: false; message: string }> => {
@@ -894,6 +990,31 @@ export function AdminClient() {
     flash(t("Deleted", "Eliminado", lang));
   };
 
+  const hideProduct = async (row: ProductRow) => {
+    const updated = { ...row, active: false };
+    setProducts((rows) => rows.map((r) => (r.id === row.id ? updated : r)));
+    await saveProduct(updated);
+    flash(t("Hidden from menu", "Oculto del menú", lang));
+  };
+
+  const saveCategoryName = async (cat: CategoryRow) => {
+    const name_en = cat.name_en.trim();
+    if (!name_en) {
+      flash(t("Name is required", "El nombre es obligatorio", lang));
+      return;
+    }
+    const { error } = await supabase
+      .from("categories")
+      .update({ name_en, name_es: name_en })
+      .eq("id", cat.id);
+    if (error) {
+      flash(error.message);
+      return;
+    }
+    flash(t("Group name saved", "Nombre del grupo guardado", lang));
+    await load();
+  };
+
   const addCategory = async () => {
     const name_en = newGroupNameEn.trim();
     const name_es = name_en;
@@ -921,16 +1042,7 @@ export function AdminClient() {
     flash(t("Group added", "Grupo agregado", lang));
   };
 
-  const requestRemoveCategory = (cat: CategoryRow) => {
-    if (removeCategoryArmedId !== cat.id) {
-      setRemoveCategoryArmedId(cat.id);
-      return;
-    }
-    void removeCategory(cat);
-  };
-
   const removeCategory = async (cat: CategoryRow) => {
-    setRemoveCategoryArmedId(null);
     const catProducts = products.filter((p) => p.category_id === cat.id);
     for (const p of catProducts) {
       const result = await deleteProductById(p.id);
@@ -1108,14 +1220,20 @@ export function AdminClient() {
 
   const eraseVisibleOrders = async () => {
     if (!canEraseOrdersTab(orderFilter) || !visibleOrders.length) return;
-    if (!eraseArmed) {
-      setEraseArmed(true);
-      flash(t("Click erase again to permanently delete this list.", "Haz clic otra vez para borrar esta lista para siempre.", lang));
+    if (
+      !confirmDelete(
+        lang,
+        t(
+          "Are you sure you want to delete these orders?",
+          "¿Seguro que quieres borrar estos pedidos?",
+          lang,
+        ),
+      )
+    ) {
       return;
     }
     const ids = visibleOrders.map((row) => row.id);
     const { error } = await supabase.from("orders").delete().in("id", ids);
-    setEraseArmed(false);
     if (error) {
       flash(error.message);
       return;
@@ -1157,10 +1275,7 @@ export function AdminClient() {
               <button
                 key={s}
                 type="button"
-                onClick={() => {
-                  setOrderFilter(s);
-                  setEraseArmed(false);
-                }}
+                onClick={() => setOrderFilter(s)}
                 className={`shrink-0 rounded-full px-3 py-1.5 text-sm font-medium ${
                   orderFilter === s ? "bg-coal text-white" : "bg-white text-coal/70 shadow-sm hover:bg-blush/40"
                 }`}
@@ -1201,13 +1316,9 @@ export function AdminClient() {
               <button
                 type="button"
                 onClick={() => void eraseVisibleOrders()}
-                className={`rounded-xl px-3 py-2 text-sm font-medium ${
-                  eraseArmed ? "bg-berry text-white" : "bg-white text-coal shadow-sm hover:bg-blush/40"
-                }`}
+                className="rounded-xl bg-white px-3 py-2 text-sm font-medium text-coal shadow-sm hover:bg-blush/40"
               >
-                {eraseArmed
-                  ? t("Click again to erase forever", "Haz clic otra vez para borrar para siempre", lang)
-                  : t("Erase these orders", "Borrar estos pedidos", lang)}
+                {t("Erase these orders", "Borrar estos pedidos", lang)}
               </button>
             ) : (
               <p className="text-xs text-coal/50">
@@ -1383,15 +1494,84 @@ export function AdminClient() {
             {t("Add group", "Agregar grupo", lang)}
           </button>
         </div>
+        {categories.length > 0 ? (
+          <div className="space-y-3 rounded-2xl bg-white p-4 shadow-sm">
+            <div>
+              <p className="text-sm font-medium text-coal">{t("Menu groups", "Grupos del menú", lang)}</p>
+              <p className="mt-0.5 text-xs text-coal/50">
+                {t(
+                  "Edit the category name shown on the order menu (e.g. Cookies, Alfajores).",
+                  "Edita el nombre de la categoría en el menú (ej. Cookies, Alfajores).",
+                  lang,
+                )}
+              </p>
+            </div>
+            <ul className="space-y-2">
+              {categories.map((cat) => (
+                <li
+                  key={cat.id}
+                  className="flex flex-col gap-2 border-b border-blush/40 pb-3 last:border-0 last:pb-0 sm:flex-row sm:items-center"
+                >
+                  <label className="min-w-0 flex-1">
+                    <span className="mb-1 block text-xs font-medium text-coal/70">
+                      {t("Group name", "Nombre del grupo", lang)}
+                    </span>
+                    <input
+                      value={cat.name_en}
+                      onChange={(e) =>
+                        setCategories((cats) =>
+                          cats.map((c) =>
+                            c.id === cat.id ? { ...c, name_en: e.target.value, name_es: e.target.value } : c,
+                          ),
+                        )
+                      }
+                      className={inputClass}
+                    />
+                  </label>
+                  <div className="flex shrink-0 flex-wrap items-center gap-3 sm:pt-5">
+                    <button
+                      type="button"
+                      onClick={() => void saveCategoryName(cat)}
+                      className="rounded-xl bg-berry px-4 py-2 text-sm font-medium text-white"
+                    >
+                      {t("Save", "Guardar", lang)}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (
+                          !confirmDelete(
+                            lang,
+                            t(
+                              "Are you sure you want to delete this group and its products?",
+                              "¿Seguro que quieres borrar este grupo y sus productos?",
+                              lang,
+                            ),
+                          )
+                        ) {
+                          return;
+                        }
+                        void removeCategory(cat);
+                      }}
+                      className="text-sm text-coal/50 hover:text-berry hover:underline"
+                    >
+                      {t("Remove group", "Quitar grupo", lang)}
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         <div className="overflow-x-auto rounded-2xl bg-white p-4 shadow-sm">
-          <table className="w-full min-w-[480px] text-left text-sm">
+          <table className="w-full min-w-[640px] text-left text-sm">
             <thead>
               <tr className="text-coal/60">
                 <th className="px-3 pb-2">{t("Product", "Producto", lang)}</th>
                 <th className="pb-2">{t("Image", "Imagen", lang)}</th>
-                <th className="pb-2">{t("Price $", "Precio $", lang)}</th>
-                <th className="pb-2">{t("On menu", "En menú", lang)}</th>
-                <th className="pb-2" />
+                <th className="pb-2 w-24">{t("Price $", "Precio $", lang)}</th>
+                <th className="pb-2 w-20 whitespace-nowrap text-center">{t("On menu", "En menú", lang)}</th>
+                <th className="pb-2 min-w-[11rem] whitespace-nowrap text-right">{t("Actions", "Acciones", lang)}</th>
               </tr>
             </thead>
             <tbody>
@@ -1421,40 +1601,8 @@ export function AdminClient() {
                 return menuGroups.map((group) => (
                   <Fragment key={group.key}>
                     <tr className="border-t border-blush/60 bg-blush/25">
-                      <td colSpan={4} className="px-3 py-2 font-display text-sm uppercase tracking-wide text-berry">
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                          <span>{group.title}</span>
-                          {group.category && removeCategoryArmedId === group.category.id ? (
-                            <span className="font-sans text-xs font-normal normal-case tracking-normal text-coal/60">
-                              {t(
-                                "This removes the group and its items.",
-                                "Esto quita el grupo y sus productos.",
-                                lang,
-                              )}
-                            </span>
-                          ) : null}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 text-right whitespace-nowrap">
-                        {group.category ? (
-                          <div className="flex flex-col items-end gap-1">
-                            <div className="flex flex-wrap items-center justify-end gap-2">
-                              <button
-                                type="button"
-                                onClick={() => requestRemoveCategory(group.category!)}
-                                className={`text-sm hover:underline ${
-                                  removeCategoryArmedId === group.category.id
-                                    ? "font-medium text-berry"
-                                    : "text-coal/50"
-                                }`}
-                              >
-                                {removeCategoryArmedId === group.category.id
-                                  ? t("Click again to remove", "Haz clic otra vez para quitar", lang)
-                                  : t("Remove group", "Quitar grupo", lang)}
-                              </button>
-                            </div>
-                          </div>
-                        ) : null}
+                      <td colSpan={5} className="px-3 py-2 font-display text-sm uppercase tracking-wide text-berry">
+                        {group.title}
                       </td>
                     </tr>
                     {group.products.map((row) => (
@@ -1470,9 +1618,10 @@ export function AdminClient() {
                           <img src={url} alt="" className="h-12 w-12 rounded-lg object-cover" />
                           <button
                             type="button"
-                            title={t("Remove", "Remove", lang)}
+                            title={t("Remove photo (save to apply)", "Quitar foto (guardar para aplicar)", lang)}
                             onClick={() => removeProductImage(row, idx)}
                             className="absolute -right-1 -top-1 rounded-full bg-coal/80 px-1 text-[10px] text-white"
+                            aria-label={t("Remove photo", "Quitar foto", lang)}
                           >
                             ×
                           </button>
@@ -1485,7 +1634,13 @@ export function AdminClient() {
                       className="mt-1"
                       onFile={(file) => void uploadProductImage(row, file)}
                     />
-                    <p className="mt-0.5 text-[10px] text-coal/50">{t("Save to apply", "Guardar para aplicar", lang)}</p>
+                    <p className="mt-0.5 text-[10px] text-coal/50">
+                      {t(
+                        "Large photos are compressed automatically. Save to apply.",
+                        "Las fotos grandes se comprimen solas. Guardar para aplicar.",
+                        lang,
+                      )}
+                    </p>
                   </td>
                   <td className="py-2">
                     <input
@@ -1499,7 +1654,7 @@ export function AdminClient() {
                       className={inputClass}
                     />
                   </td>
-                  <td className="py-2">
+                  <td className="py-2 text-center">
                     <input
                       type="checkbox"
                       checked={row.active}
@@ -1508,19 +1663,33 @@ export function AdminClient() {
                           rows.map((r) => (r.id === row.id ? { ...r, active: e.target.checked } : r)),
                         )
                       }
+                      aria-label={t("On menu", "En menú", lang)}
                     />
                   </td>
-                  <td className="py-2 whitespace-nowrap">
-                    <button type="button" onClick={() => saveProduct(row)} className="text-berry hover:underline">
-                      {t("Save", "Guardar", lang)}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => deleteProduct(row.id)}
-                      className="ml-3 text-coal/50 hover:underline"
-                    >
-                      {t("Delete", "Borrar", lang)}
-                    </button>
+                  <td className="py-2">
+                    <div className="flex items-center justify-end gap-4 whitespace-nowrap">
+                      <button
+                        type="button"
+                        disabled={!row.active}
+                        onClick={() => void hideProduct(row)}
+                        className="text-sm text-coal/70 hover:text-berry hover:underline disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {t("Hide", "Ocultar", lang)}
+                      </button>
+                      <button type="button" onClick={() => saveProduct(row)} className="text-sm text-berry hover:underline">
+                        {t("Save", "Guardar", lang)}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!confirmDelete(lang)) return;
+                          void deleteProduct(row.id);
+                        }}
+                        className="text-sm text-coal/50 hover:text-berry hover:underline"
+                      >
+                        {t("Delete", "Borrar", lang)}
+                      </button>
+                    </div>
                   </td>
                 </tr>
                     ))}
@@ -1619,7 +1788,10 @@ export function AdminClient() {
             lang={lang}
             onChange={(next) => setOffers((rows) => rows.map((r) => (r.id === offer.id ? next : r)))}
             onSave={(row) => saveOffer(row)}
-            onDelete={() => deleteOffer(offer.id)}
+            onDelete={() => {
+              if (!confirmDelete(lang)) return;
+              void deleteOffer(offer.id);
+            }}
           />
         ))}
         <div className="rounded-2xl border border-dashed border-blush bg-white p-4">
@@ -1642,6 +1814,173 @@ export function AdminClient() {
       </section>
       )}
 
+      {tab === "specials" && (
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold">{t("Specials", "Especiales", lang)}</h2>
+        <p className="text-sm text-coal/60">
+          {t(
+            "Shows on the homepage and menu only while enabled and today is within the start and end dates.",
+            "Se ve en la página principal y el menú solo cuando está activo y hoy está entre las fechas de inicio y fin.",
+            lang,
+          )}
+        </p>
+        <div className="flex flex-wrap items-center gap-4">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={specials.enabled}
+              onChange={(e) => setSpecials((s) => ({ ...s, enabled: e.target.checked }))}
+            />
+            {t("Enabled", "Activo", lang)}
+          </label>
+          <label className="text-sm text-coal/70">
+            Style
+            <select
+              value={specials.theme}
+              onChange={(e) =>
+                setSpecials((s) => ({
+                  ...s,
+                  theme: e.target.value === "christmas" ? "christmas" : "",
+                }))
+              }
+              className={`${inputClass} mt-1 block min-w-[10rem]`}
+            >
+              <option value="">None</option>
+              <option value="christmas">Christmas</option>
+            </select>
+          </label>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <label className="text-sm text-coal/70">
+            {t("Start date", "Fecha de inicio", lang)}
+            <input
+              type="date"
+              value={specials.starts_on}
+              onChange={(e) => setSpecials((s) => ({ ...s, starts_on: e.target.value }))}
+              className={`${inputClass} mt-1`}
+            />
+          </label>
+          <label className="text-sm text-coal/70">
+            {t("End date", "Fecha de fin", lang)}
+            <input
+              type="date"
+              value={specials.ends_on}
+              onChange={(e) => setSpecials((s) => ({ ...s, ends_on: e.target.value }))}
+              className={`${inputClass} mt-1`}
+            />
+          </label>
+          <input
+            value={specials.title_en}
+            onChange={(e) => setSpecials((s) => ({ ...s, title_en: e.target.value }))}
+            placeholder={t("Title", "Título", lang)}
+            className={`${inputClass} sm:col-span-2`}
+          />
+          <textarea
+            value={specials.message_en}
+            onChange={(e) => setSpecials((s) => ({ ...s, message_en: e.target.value }))}
+            placeholder={t("Short message", "Mensaje breve", lang)}
+            rows={2}
+            className={`${inputClass} sm:col-span-2`}
+          />
+        </div>
+        <SpecialsImageField
+          lang={lang}
+          imageUrl={specials.image_url}
+          previewClass="mt-1 max-h-20 rounded-lg object-cover"
+          onFile={(file) =>
+            void uploadSpecialsImage(file, (url) => setSpecials((s) => ({ ...s, image_url: url })))
+          }
+          onClear={() => setSpecials((s) => ({ ...s, image_url: "" }))}
+        />
+        <div className="space-y-3">
+          <p className="text-sm font-medium text-coal">{t("Optional items", "Artículos opcionales", lang)}</p>
+          {specials.items.map((row, index) => (
+            <div key={index} className="grid gap-2 rounded-xl border border-blush/40 bg-white p-3 sm:grid-cols-2">
+              <SpecialsImageField
+                lang={lang}
+                imageUrl={row.image_url}
+                previewClass="mt-1 h-12 w-12 rounded-lg object-cover"
+                onFile={(file) =>
+                  void uploadSpecialsImage(file, (url) =>
+                    setSpecials((s) => ({
+                      ...s,
+                      items: s.items.map((item, i) => (i === index ? { ...item, image_url: url } : item)),
+                    })),
+                  )
+                }
+                onClear={() =>
+                  setSpecials((s) => ({
+                    ...s,
+                    items: s.items.map((item, i) => (i === index ? { ...item, image_url: "" } : item)),
+                  }))
+                }
+              />
+              <input
+                value={row.name_en}
+                onChange={(e) =>
+                  setSpecials((s) => ({
+                    ...s,
+                    items: s.items.map((item, i) => (i === index ? { ...item, name_en: e.target.value } : item)),
+                  }))
+                }
+                placeholder={t("Name", "Nombre", lang)}
+                className={inputClass}
+              />
+              <input
+                inputMode="decimal"
+                value={row.price_cents != null ? dollars(row.price_cents) : ""}
+                onChange={(e) => {
+                  const raw = e.target.value.trim();
+                  const price_cents = raw ? toCents(raw) : null;
+                  setSpecials((s) => ({
+                    ...s,
+                    items: s.items.map((item, i) => (i === index ? { ...item, price_cents } : item)),
+                  }));
+                }}
+                placeholder={t("Price $", "Precio $", lang)}
+                className={inputClass}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (!confirmDelete(lang)) return;
+                  setSpecials((s) => ({ ...s, items: s.items.filter((_, i) => i !== index) }));
+                }}
+                className="text-sm text-coal/50 hover:text-berry sm:col-span-2 sm:text-left"
+              >
+                {t("Remove item", "Quitar artículo", lang)}
+              </button>
+              <input
+                value={row.note_en}
+                onChange={(e) =>
+                  setSpecials((s) => ({
+                    ...s,
+                    items: s.items.map((item, i) => (i === index ? { ...item, note_en: e.target.value } : item)),
+                  }))
+                }
+                placeholder={t("Note", "Nota", lang)}
+                className={`${inputClass} sm:col-span-2`}
+              />
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => setSpecials((s) => ({ ...s, items: [...s.items, emptySpecialItem()] }))}
+            className="rounded-xl bg-blush/40 px-4 py-2 text-sm font-medium text-coal hover:bg-blush/70"
+          >
+            {t("Add item", "Agregar artículo", lang)}
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={() => void saveSpecials()}
+          className="rounded-xl bg-berry px-4 py-2 text-sm font-medium text-white"
+        >
+          {t("Save", "Guardar", lang)}
+        </button>
+      </section>
+      )}
+
       {tab === "reviews" && (
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">{t("Reviews", "Reseñas", lang)}</h2>
@@ -1651,7 +1990,10 @@ export function AdminClient() {
             review={row}
             onChange={(next) => setReviews((rows) => rows.map((r, i) => (i === index ? next : r)))}
             onSave={() => saveReview(index, reviews[index] ?? row)}
-            onDelete={() => deleteReview(index)}
+            onDelete={() => {
+              if (!confirmDelete(lang)) return;
+              void deleteReview(index);
+            }}
           />
         ))}
         <div className="rounded-2xl border border-dashed border-blush bg-white p-4">
@@ -1780,7 +2122,14 @@ export function AdminClient() {
                       </button>
                     )}
                     {" · "}
-                    <button type="button" onClick={() => deletePromo(row.code)} className="text-coal/50 hover:underline">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!confirmDelete(lang)) return;
+                        void deletePromo(row.code);
+                      }}
+                      className="text-coal/50 hover:underline"
+                    >
                       {t("Delete", "Borrar", lang)}
                     </button>
                   </td>
@@ -1850,6 +2199,96 @@ export function AdminClient() {
       </section>
       )}
 
+      {tab === "calendar" && (
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold">{t("Order dates", "Fechas de pedido", lang)}</h2>
+        <p className="text-sm text-coal/70">
+          {t(
+            "Block dates when you cannot take pickup or ship orders (holidays, days off). Customers cannot choose these dates at checkout.",
+            "Bloquea fechas cuando no puedas recibir pedidos (festivos, días libres). Los clientes no podrán elegir esas fechas al pagar.",
+            lang,
+          )}
+        </p>
+        <div className="space-y-3 rounded-2xl bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="min-w-[10rem] flex-1">
+              <span className="mb-1 block text-xs font-medium text-coal/70">
+                {t("Single day", "Un día", lang)}
+              </span>
+              <input
+                type="date"
+                value={newBlockedDate}
+                onChange={(e) => setNewBlockedDate(e.target.value)}
+                className={inputClass}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={addBlockedDate}
+              className="rounded-xl bg-berry px-4 py-2 text-sm font-medium text-white"
+            >
+              {t("Add", "Agregar", lang)}
+            </button>
+          </div>
+          <div className="flex flex-wrap items-end gap-2 border-t border-blush/40 pt-3">
+            <label className="min-w-[10rem] flex-1">
+              <span className="mb-1 block text-xs font-medium text-coal/70">
+                {t("From", "Desde", lang)}
+              </span>
+              <input
+                type="date"
+                value={blockedRangeFrom}
+                onChange={(e) => setBlockedRangeFrom(e.target.value)}
+                className={inputClass}
+              />
+            </label>
+            <label className="min-w-[10rem] flex-1">
+              <span className="mb-1 block text-xs font-medium text-coal/70">
+                {t("To", "Hasta", lang)}
+              </span>
+              <input
+                type="date"
+                value={blockedRangeTo}
+                onChange={(e) => setBlockedRangeTo(e.target.value)}
+                className={inputClass}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={addBlockedRange}
+              className="rounded-xl bg-coal px-4 py-2 text-sm font-medium text-white"
+            >
+              {t("Add range", "Agregar rango", lang)}
+            </button>
+          </div>
+          <p className="text-xs text-coal/60">
+            {t(
+              "Use a range for weekends or vacations (e.g. Saturday through Sunday).",
+              "Usa un rango para fines de semana o vacaciones (ej. sábado a domingo).",
+              lang,
+            )}
+          </p>
+        </div>
+        {orderCalendar.blocked_dates.length === 0 ? (
+          <p className="text-sm text-coal/60">{t("No blocked dates yet.", "Aún no hay fechas bloqueadas.", lang)}</p>
+        ) : (
+          <BlockedDatesOffList
+            blocked={orderCalendar.blocked_dates}
+            lang={lang}
+            onRemove={(iso) => {
+              if (!confirmDelete(lang)) return;
+              setOrderCalendar((c) => ({
+                blocked_dates: c.blocked_dates.filter((d) => d !== iso),
+              }));
+            }}
+          />
+        )}
+        <button type="button" onClick={() => void saveOrderCalendar()} className="rounded-xl bg-berry px-4 py-2 text-sm font-medium text-white">
+          {t("Save dates", "Guardar fechas", lang)}
+        </button>
+      </section>
+      )}
+
       {tab === "access" && (
       <section className="space-y-3 rounded-2xl bg-white p-4 shadow-sm">
         <h2 className="text-lg font-semibold">{t("Owner access", "Acceso de dueña", lang)}</h2>
@@ -1870,6 +2309,87 @@ export function AdminClient() {
         </div>
       </section>
       )}
+    </div>
+  );
+}
+
+function BlockedDatesOffList({
+  blocked,
+  lang,
+  onRemove,
+}: {
+  blocked: string[];
+  lang: "en" | "es";
+  onRemove: (iso: string) => void;
+}) {
+  const ranges = useMemo(() => groupBlockedDatesIntoRanges(blocked), [blocked]);
+  const [openKeys, setOpenKeys] = useState<Set<string>>(() => new Set());
+
+  const toggle = (key: string) => {
+    setOpenKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  return (
+    <div className="space-y-2 rounded-2xl bg-white p-4 shadow-sm">
+      <h3 className="text-sm font-medium text-coal/80">{t("Days off", "Días libres", lang)}</h3>
+      <ul className="divide-y divide-blush/30">
+        {ranges.map((range) => {
+          const key = blockedRangeKey(range);
+          const open = openKeys.has(key);
+          const label =
+            range.from === range.to
+              ? range.from
+              : `${range.from} – ${range.to}`;
+          const countLabel =
+            range.dates.length === 1
+              ? t("1 day", "1 día", lang)
+              : t(`${range.dates.length} days`, `${range.dates.length} días`, lang);
+
+          return (
+            <li key={key} className="py-2 first:pt-0 last:pb-0">
+              <button
+                type="button"
+                onClick={() => toggle(key)}
+                className="flex w-full items-center gap-2 text-left text-sm text-coal"
+                aria-expanded={open}
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 16 16"
+                  className={`shrink-0 text-coal/50 transition-transform ${open ? "rotate-90" : ""}`}
+                  aria-hidden
+                >
+                  <path d="M6 4L10 8L6 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                </svg>
+                <span className="font-medium">{label}</span>
+                <span className="text-coal/50">({countLabel})</span>
+              </button>
+              {open ? (
+                <ul className="mt-2 space-y-1 border-l-2 border-blush/40 pl-6">
+                  {range.dates.map((iso) => (
+                    <li key={iso} className="flex items-center justify-between gap-3 text-sm text-coal/80">
+                      <span>{iso}</span>
+                      <button
+                        type="button"
+                        onClick={() => onRemove(iso)}
+                        className="text-coal/50 hover:text-berry hover:underline"
+                      >
+                        {t("Remove", "Quitar", lang)}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -2209,6 +2729,42 @@ function HiddenFileUpload({
   );
 }
 
+function SpecialsImageField({
+  lang,
+  imageUrl,
+  previewClass,
+  onFile,
+  onClear,
+}: {
+  lang: "en" | "es";
+  imageUrl: string;
+  previewClass: string;
+  onFile: (file: File) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="sm:col-span-2">
+      <p className="text-sm text-coal/70">{t("Image", "Imagen", lang)}</p>
+      {imageUrl ? (
+        <div className="relative mt-1 inline-block">
+          <img src={imageUrl} alt="" className={previewClass} />
+          <button
+            type="button"
+            title={t("Remove image", "Quitar imagen", lang)}
+            onClick={onClear}
+            className="absolute -right-1 -top-1 rounded-full bg-coal/80 px-1 text-[10px] text-white"
+            aria-label={t("Remove image", "Quitar imagen", lang)}
+          >
+            ×
+          </button>
+        </div>
+      ) : null}
+      <HiddenFileUpload lang={lang} className="mt-1" onFile={onFile} />
+      <p className="mt-0.5 text-[10px] text-coal/50">{t("Save to apply", "Guardar para aplicar", lang)}</p>
+    </div>
+  );
+}
+
 function ReviewForm({
   review,
   onChange,
@@ -2289,7 +2845,7 @@ function ReviewForm({
         </button>
         {onDelete && (
           <button type="button" onClick={onDelete} className="rounded-xl px-4 py-2 text-sm font-medium text-coal hover:text-berry">
-            Delete
+            {t("Delete", "Borrar", lang)}
           </button>
         )}
       </div>

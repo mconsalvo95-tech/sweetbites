@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { LanguageToggle } from "./LanguageToggle";
 import { SideDrawer } from "./SideDrawer";
@@ -68,14 +68,102 @@ function CartIcon() {
   );
 }
 
-export function Header() {
+type HeaderProps = {
+  showSpecialsNav?: boolean;
+};
+
+function scrollTop(): number {
+  return window.scrollY || document.documentElement.scrollTop || 0;
+}
+
+export function Header({ showSpecialsNav = false }: HeaderProps) {
   const { lang } = useLang();
   const { openContact } = useContactModal();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [headerHidden, setHeaderHidden] = useState(false);
+  const [hoverPeek, setHoverPeek] = useState(false);
+  const lastScrollY = useRef(0);
+  const rafId = useRef(0);
+
+  useEffect(() => {
+    if (drawerOpen) {
+      setHeaderHidden(false);
+      setHoverPeek(false);
+    }
+  }, [drawerOpen]);
+
+  useEffect(() => {
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reducedMotion) return;
+
+    const hideHeader = () => {
+      setHeaderHidden(true);
+      setHoverPeek(false);
+    };
+
+    const syncFromScroll = () => {
+      rafId.current = 0;
+      const y = scrollTop();
+      const prev = lastScrollY.current;
+      if (y <= 24) {
+        setHeaderHidden(false);
+        setHoverPeek(false);
+      } else if (y > prev) {
+        hideHeader();
+      } else if (y < prev - 8) {
+        setHeaderHidden(false);
+      }
+      lastScrollY.current = y;
+    };
+
+    const onScroll = () => {
+      if (!rafId.current) rafId.current = window.requestAnimationFrame(syncFromScroll);
+    };
+
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY > 4 && scrollTop() > 24) hideHeader();
+    };
+
+    lastScrollY.current = scrollTop();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    document.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("wheel", onWheel, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      document.removeEventListener("scroll", onScroll);
+      window.removeEventListener("wheel", onWheel);
+      if (rafId.current) window.cancelAnimationFrame(rafId.current);
+    };
+  }, []);
+
+  const headerVisible = !headerHidden || hoverPeek;
+
+  const specialsLink = showSpecialsNav ? (
+    <Link
+      href="/specials"
+      className="whitespace-nowrap text-sm font-medium text-white/90 transition-colors hover:text-white lg:text-base"
+    >
+      {t("Specials", "Especiales", lang)}
+    </Link>
+  ) : null;
 
   return (
     <>
-      <header className="site-header sticky top-0 z-50">
+      <div className="site-header-spacer" aria-hidden />
+      {headerHidden && !hoverPeek ? (
+        <div
+          className="fixed top-0 z-[60] h-3 w-full"
+          onMouseEnter={() => setHoverPeek(true)}
+          aria-hidden
+        />
+      ) : null}
+      <header
+        className={`site-header fixed top-0 z-50 w-full transition-transform duration-300 ease-out ${
+          headerVisible ? "translate-y-0" : "-translate-y-full pointer-events-none"
+        }`}
+        onMouseEnter={() => headerHidden && setHoverPeek(true)}
+        onMouseLeave={() => setHoverPeek(false)}
+      >
         <div className="grid h-full w-full grid-cols-[1fr_auto_1fr] items-center px-2 py-1 sm:px-3">
           <div className="flex min-w-0 items-center justify-self-start">
             <button
@@ -110,6 +198,7 @@ export function Header() {
               >
                 {t("Contact", "Contacto", lang)}
               </Link>
+              {specialsLink}
             </nav>
           </div>
 
@@ -136,6 +225,7 @@ export function Header() {
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         onContact={openContact}
+        showSpecialsNav={showSpecialsNav}
       />
     </>
   );

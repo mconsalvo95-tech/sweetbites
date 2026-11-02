@@ -32,9 +32,26 @@ export function minWantedOnIso(d = new Date()): string {
   return localDateIso(local);
 }
 
-export function isAllowedWantedOn(iso: string, d = new Date()): boolean {
+export function isAllowedWantedOn(iso: string, d = new Date(), blockedDates: string[] = []): boolean {
   if (!WANTED_ON_RE.test(iso)) return false;
-  return iso >= minWantedOnIso(d);
+  if (iso < minWantedOnIso(d)) return false;
+  if (blockedDates.includes(iso)) return false;
+  return true;
+}
+
+/** First allowed order date on or after `fromIso` (inclusive). */
+export function nextAllowedWantedOn(fromIso: string, blockedDates: string[] = [], d = new Date()): string {
+  const min = minWantedOnIso(d);
+  const start = WANTED_ON_RE.test(fromIso) && fromIso >= min ? fromIso : min;
+  const [y, m, day] = start.split("-").map(Number);
+  const cur = new Date(y, m - 1, day);
+  // ponytail: scan up to 366 days; extend if you block a full year+
+  for (let i = 0; i < 366; i++) {
+    const iso = localDateIso(cur);
+    if (isAllowedWantedOn(iso, d, blockedDates)) return iso;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return min;
 }
 
 export function wantedNote(

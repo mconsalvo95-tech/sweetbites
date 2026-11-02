@@ -68,6 +68,11 @@ body::before {
   scroll-margin-top: calc(var(--site-header-h) + var(--menu-chips-h));
 }
 
+.site-header-spacer {
+  height: var(--site-header-h);
+  flex-shrink: 0;
+}
+
 .site-header {
   /* h-16 + py-1 below sm; sm:h-28 / lg:h-32 — drawer band matches the main bar */
   height: var(--site-header-h);

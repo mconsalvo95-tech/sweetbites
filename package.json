@@ -4,10 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
+    "dev:clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\" && next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "self-check": "tsx scripts/self-check.ts"
+    "self-check": "tsx scripts/self-check.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@supabase/ssr": "^0.6.1",
@@ -26,6 +28,7 @@
     "eslint-config-next": "^15.2.4",
     "tailwindcss": "^4.0.17",
     "tsx": "^4.19.3",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^2.1.9"
   }
 }

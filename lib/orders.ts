@@ -7,6 +7,8 @@ import { getSupabaseAdmin } from "./supabase-admin";
 import { getOriginPostal, resolveShipRate } from "./shipping";
 import { quotePromoCode } from "./promos";
 import { sendOrderEmails } from "./mail";
+import { isBlockedOrderDate } from "./order-calendar";
+import { fetchOrderCalendarServer } from "./order-calendar-server";
 import { isAllowedWantedOn, WANTED_ON_RE, wantedNote, wantedOnFromNotes } from "./shop";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -66,8 +68,12 @@ export async function submitOrder(
   if (!WANTED_ON_RE.test(input.wantedOn ?? "")) {
     throw new Error("Select a date");
   }
-  if (!isAllowedWantedOn(input.wantedOn as string)) {
-    throw new Error("Order date too soon");
+  const { blocked_dates } = await fetchOrderCalendarServer();
+  const wantedOn = input.wantedOn as string;
+  if (!isAllowedWantedOn(wantedOn, new Date(), blocked_dates)) {
+    throw new Error(
+      isBlockedOrderDate(wantedOn, blocked_dates) ? "Order date not available" : "Order date too soon",
+    );
   }
   const notes = wantedNote(fulfillment === "ship" ? "ship" : "pickup", input.wantedOn as string, input.notes, input.lang);
 

@@ -24,9 +24,10 @@ type SideDrawerProps = {
   open: boolean;
   onClose: () => void;
   onContact: () => void;
+  showSpecialsNav?: boolean;
 };
 
-export function SideDrawer({ open, onClose, onContact }: SideDrawerProps) {
+export function SideDrawer({ open, onClose, onContact, showSpecialsNav = false }: SideDrawerProps) {
   const { lang } = useLang();
   const { user, profile, signOut } = useAuth();
 
@@ -88,16 +89,32 @@ export function SideDrawer({ open, onClose, onContact }: SideDrawerProps) {
           </div>
 
           <nav className="mt-4 flex flex-col">
-            {navLinks.map((link, i) => (
-              <Link
-                key={link.href + link.labelEn}
-                href={link.href}
-                onClick={onClose}
-                className={`py-3 text-coal/85 transition-colors hover:text-berry ${i > 0 ? "border-t border-coal/10" : ""}`}
-              >
-                {lang === "es" ? link.labelEs : link.labelEn}
-              </Link>
-            ))}
+            {navLinks.flatMap((link, i) => {
+              const border = i > 0 ? "border-t border-coal/10" : "";
+              const items = [
+                <Link
+                  key={link.href + link.labelEn}
+                  href={link.href}
+                  onClick={onClose}
+                  className={`py-3 text-coal/85 transition-colors hover:text-berry ${border}`}
+                >
+                  {lang === "es" ? link.labelEs : link.labelEn}
+                </Link>,
+              ];
+              if (link.href === "/contact" && showSpecialsNav) {
+                items.push(
+                  <Link
+                    key="/specials"
+                    href="/specials"
+                    onClick={onClose}
+                    className="border-t border-coal/10 py-3 text-coal/85 transition-colors hover:text-berry"
+                  >
+                    {t("Specials", "Especiales", lang)}
+                  </Link>,
+                );
+              }
+              return items;
+            })}
           </nav>
 
           <div className="mt-6 border-t border-coal/10 pt-4">
