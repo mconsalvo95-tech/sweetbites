@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { isValidCanadianPostal } from "@/lib/format";
 import { getShippingRates } from "@/lib/shipping";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
+  if (!rateLimit(`ship:${clientIp(request)}`, 30, 10 * 60 * 1000)) {
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+  }
   try {
     const body = (await request.json()) as {
       postal?: string;

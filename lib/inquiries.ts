@@ -3,6 +3,28 @@ import { readFileSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 import type { Lang } from "./types";
 import { getSupabase } from "./supabase";
+import { getSupabaseAdmin } from "./supabase-admin";
+
+export class InquiryError extends Error {
+  status: number;
+  constructor(message: string, status = 400) {
+    super(message);
+    this.status = status;
+  }
+}
+
+function requireProductionInquiryPersistence(): void {
+  if (process.env.NODE_ENV !== "production") return;
+  if (!getSupabase()) {
+    throw new InquiryError(
+      "Inquiries unavailable: set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY",
+      503,
+    );
+  }
+  if (!getSupabaseAdmin()) {
+    throw new InquiryError("Inquiries unavailable: set SUPABASE_SERVICE_ROLE_KEY", 503);
+  }
+}
 
 const LOCAL_FILE = join(process.cwd(), ".local-inquiries.json");
 
@@ -48,10 +70,12 @@ function writeLocal(records: InquiryRecord[]): void {
 }
 
 export async function submitInquiry(input: SubmitInquiryInput): Promise<{ id: string; source: "supabase" | "local" }> {
+  requireProductionInquiryPersistence();
   const supabase = getSupabase();
 
   if (supabase) {
-    const { data, error } = await supabase
+    const db = getSupabaseAdmin() ?? supabase;
+    const { data, error } = await db
       .from("inquiries")
       .insert({
         type: input.type,

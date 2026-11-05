@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
-import { submitInquiry, type SubmitInquiryInput } from "@/lib/inquiries";
+import { InquiryError, submitInquiry, type SubmitInquiryInput } from "@/lib/inquiries";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function POST(request: Request) {
+  if (!rateLimit(`inquiry:${clientIp(request)}`, 8, 60 * 60 * 1000)) {
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+  }
   try {
     const body = (await request.json()) as SubmitInquiryInput;
     if (!body.type || !body.email?.trim() || !EMAIL_RE.test(body.email.trim())) {
@@ -31,6 +35,9 @@ export async function POST(request: Request) {
     });
     return NextResponse.json(result);
   } catch (err) {
+    if (err instanceof InquiryError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
     const message = err instanceof Error ? err.message : "Inquiry failed";
     return NextResponse.json({ error: message }, { status: 500 });
   }

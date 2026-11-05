@@ -191,9 +191,7 @@ create table if not exists inquiries (
 
 alter table inquiries enable row level security;
 
-drop policy if exists "Public insert inquiries" on inquiries;
-create policy "Public insert inquiries" on inquiries
-  for insert with check (true);
+-- Inquiries inserted via API using the service role (no public insert policy).
 
 -- Phase B: promo codes (food only; shipping unchanged)
 
