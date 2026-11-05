@@ -10,7 +10,8 @@ import { quotePromoCode } from "./promos";
 import { sendOrderEmails } from "./mail";
 import { isBlockedOrderDate } from "./order-calendar";
 import { fetchOrderCalendarServer } from "./order-calendar-server";
-import { isAllowedWantedOn, localDateIso, WANTED_ON_RE, wantedNote, wantedOnFromNotes } from "./shop";
+import { fetchSquareOrderState, squarePaymentMatches } from "./square";
+import { addShopDays, isAllowedWantedOn, shopDayIso, WANTED_ON_RE, wantedNote, wantedOnFromNotes } from "./shop";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const DEV_ORDER_STATUS_KEY = "dev-order-status";
@@ -34,12 +35,62 @@ function productLeadDays(leadDays: unknown): number {
 }
 
 export function minWantedOnForLeadDays(maxLead: number, d = new Date()): string {
-  const local = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  local.setDate(local.getDate() + maxLead);
-  return localDateIso(local);
+  return addShopDays(shopDayIso(d), maxLead);
 }
 
-export type OrderCatalogProduct = Pick<Product, "id" | "priceCents" | "nameEn" | "nameEs" | "leadDays">;
+export type OrderCatalogProduct = Pick<
+  Product,
+  "id" | "priceCents" | "nameEn" | "nameEs" | "leadDays" | "options"
+>;
+
+function optionKeyMatches(nameEn: string, nameEs: string, key: string): boolean {
+  return key === nameEn || key === nameEs;
+}
+
+function valueNameAllowed(
+  values: { nameEn: string; nameEs: string }[],
+  picked: string,
+): boolean {
+  return values.some((v) => v.nameEn === picked || v.nameEs === picked);
+}
+
+function validateOptionsJson(
+  product: OrderCatalogProduct,
+  optionsJson: Record<string, string[]> | undefined,
+): void {
+  const json = optionsJson ?? {};
+  const options = product.options ?? [];
+
+  for (const key of Object.keys(json)) {
+    const opt = options.find((o) => optionKeyMatches(o.nameEn, o.nameEs, key));
+    if (!opt) throw new OrderInputError("Choose the options for this item");
+    const vals = json[key] ?? [];
+    if (!Array.isArray(vals)) throw new OrderInputError("Choose the options for this item");
+    const seen = new Set<string>();
+    for (const v of vals) {
+      if (typeof v !== "string" || !v.trim()) {
+        throw new OrderInputError("Choose the options for this item");
+      }
+      if (!valueNameAllowed(opt.values, v)) {
+        throw new OrderInputError("Choose the options for this item");
+      }
+      if (seen.has(v)) throw new OrderInputError("Choose the options for this item");
+      seen.add(v);
+    }
+    if (opt.maxSelect > 0 && vals.length > opt.maxSelect) {
+      throw new OrderInputError("Choose the options for this item");
+    }
+  }
+
+  for (const opt of options) {
+    const key =
+      Object.keys(json).find((k) => optionKeyMatches(opt.nameEn, opt.nameEs, k)) ?? null;
+    const vals = key ? (json[key] ?? []) : [];
+    if (opt.required && vals.length === 0) {
+      throw new OrderInputError("Choose the options for this item");
+    }
+  }
+}
 
 export function resolveOrderLines(
   items: CartLine[],
@@ -56,6 +107,7 @@ export function resolveOrderLines(
     if (item.unitPriceCents !== product.priceCents) {
       throw new OrderInputError(MENU_PRICE_CHANGED_MSG);
     }
+    validateOptionsJson(product, item.optionsJson);
     maxLead = Math.max(maxLead, productLeadDays(product.leadDays));
     foodCents += product.priceCents * item.qty;
     lines.push({
@@ -193,11 +245,27 @@ export async function submitOrder(
   let serviceNameEn = input.serviceNameEn;
   let serviceNameEs = input.serviceNameEs;
   if (fulfillment === "ship") {
-    const quoted = await resolveShipRate({
+    if (
+      !input.shipStreet?.trim() ||
+      !input.shipCity?.trim() ||
+      !input.shipProvince?.trim()
+    ) {
+      throw new OrderInputError("Enter the shipping address");
+    }
+    let quoted;
+    try {
+      quoted = await resolveShipRate({
       destPostal: input.shipPostal,
       serviceCode: input.serviceCode,
       items: orderItems,
     });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      if (msg === "Shipping quote unavailable") {
+        throw new OrderInputError("Shipping quote unavailable, try again", 503);
+      }
+      throw err;
+    }
     shippingCents = quoted.rateCents;
     serviceNameEn = quoted.nameEn;
     serviceNameEs = quoted.nameEs;
@@ -260,7 +328,11 @@ export async function submitOrder(
     }));
 
     const { error: itemsError } = await db.from("order_items").insert(orderItemsRows);
-    if (itemsError) throw new Error(itemsError.message);
+    if (itemsError) {
+      const { error: delErr } = await db.from("orders").delete().eq("id", id);
+      if (delErr) console.error("order rollback delete failed", delErr);
+      throw new Error(itemsError.message);
+    }
 
     if (fulfillment === "ship" && input.serviceCode) {
       const { error: shipError } = await db.from("shipments").insert({
@@ -276,7 +348,11 @@ export async function submitOrder(
           originPostal: getOriginPostal(),
         },
       });
-      if (shipError) throw new Error(shipError.message);
+      if (shipError) {
+        const { error: delErr } = await db.from("orders").delete().eq("id", id);
+        if (delErr) console.error("order rollback delete failed", delErr);
+        throw new Error(shipError.message);
+      }
     }
 
     return {
@@ -416,15 +492,41 @@ export async function attachSquareOrder(orderId: string, squareOrderId: string) 
   await admin.from("orders").update({ square_order_id: squareOrderId }).eq("id", orderId);
 }
 
-export async function markOrderPaid(orderId: string, squarePaymentId?: string) {
+export async function markOrderPaid(
+  orderId: string,
+  squarePaymentId?: string,
+  expectedSquareOrderId?: string,
+): Promise<{ newlyPaid: boolean; isPaid: boolean }> {
   const admin = getSupabaseAdmin();
   if (!admin) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
 
   const { data: order, error } = await admin.from("orders").select("*").eq("id", orderId).maybeSingle();
   if (error) throw new Error(error.message);
-  if (!order) return { newlyPaid: false };
+  if (!order) return { newlyPaid: false, isPaid: false };
 
-  if (order.payment_status === "paid") return { newlyPaid: false };
+  if (order.payment_status === "paid") return { newlyPaid: false, isPaid: true };
+
+  const totalCents = order.total_cents ?? 0;
+  if (totalCents > 0) {
+    const storedSq = order.square_order_id as string | null;
+    if (
+      expectedSquareOrderId &&
+      storedSq &&
+      expectedSquareOrderId !== storedSq
+    ) {
+      return { newlyPaid: false, isPaid: false };
+    }
+    if (!storedSq) return { newlyPaid: false, isPaid: false };
+    const square = await fetchSquareOrderState(storedSq);
+    if (
+      !squarePaymentMatches(
+        { storedSquareOrderId: storedSq, totalCents },
+        square,
+      )
+    ) {
+      return { newlyPaid: false, isPaid: false };
+    }
+  }
 
   const { error: updateError } = await admin
     .from("orders")
@@ -478,5 +580,5 @@ export async function markOrderPaid(orderId: string, squarePaymentId?: string) {
     console.error("order email error", err);
   }
 
-  return { newlyPaid: true };
+  return { newlyPaid: true, isPaid: true };
 }

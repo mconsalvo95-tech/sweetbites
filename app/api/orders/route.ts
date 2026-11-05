@@ -8,10 +8,14 @@ import {
   submitOrder,
   type SubmitOrderInput,
 } from "@/lib/orders";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { createSquareCheckout, squareEnabled } from "@/lib/square";
 import { getAuthUserId } from "@/lib/supabase-server";
 
 export async function POST(request: Request) {
+  if (!rateLimit(`order:${clientIp(request)}`, 10, 60 * 60 * 1000)) {
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+  }
   try {
     const body = (await request.json()) as SubmitOrderInput;
     if (
@@ -121,7 +125,8 @@ export async function POST(request: Request) {
       message === "Select a shipping option" ||
       message === "Select a date" ||
       message === "Order date too soon" ||
-      message === "Order date not available"
+      message === "Order date not available" ||
+      message === "Enter the shipping address"
         ? 400
         : 500;
     return NextResponse.json({ error: message }, { status });

@@ -1,4 +1,14 @@
 import { getSupabase } from "./supabase";
+import { getSupabaseAdmin } from "./supabase-admin";
+
+function promoSupabase() {
+  const admin = getSupabaseAdmin();
+  if (admin) return admin;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
+  }
+  return getSupabase();
+}
 
 export type PromoKind = "percent" | "fixed";
 
@@ -54,7 +64,7 @@ export async function lookupPromo(raw: string): Promise<PromoCode | null> {
   const code = normalizePromoCode(raw);
   if (!code) return null;
 
-  const supabase = getSupabase();
+  const supabase = promoSupabase();
   if (supabase) {
     const { data } = await supabase
       .from("promo_codes")

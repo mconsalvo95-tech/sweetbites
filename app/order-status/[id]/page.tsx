@@ -28,6 +28,7 @@ type OrderView = {
   serviceCode?: string;
   serviceNameEn?: string;
   serviceNameEs?: string;
+  emailed?: boolean;
 };
 
 export default function OrderStatusPage() {
@@ -42,6 +43,7 @@ export default function OrderStatusPage() {
   const [loading, setLoading] = useState(true);
   const [cancelBusy, setCancelBusy] = useState(false);
   const [cancelMsg, setCancelMsg] = useState("");
+  const [emailedFailed, setEmailedFailed] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -60,7 +62,9 @@ export default function OrderStatusPage() {
 
       const cached = localStorage.getItem(`sweetbites-order-${id}`);
       if (cached) {
-        setOrder({ id, ...(JSON.parse(cached) as Omit<OrderView, "id">) });
+        const parsed = JSON.parse(cached) as Omit<OrderView, "id"> & { emailed?: boolean };
+        setOrder({ id, ...parsed });
+        if (parsed.emailed === false) setEmailedFailed(true);
       }
       setLoading(false);
     }
@@ -154,11 +158,17 @@ export default function OrderStatusPage() {
               "Tu pedido está guardado. Completa el pago en Square para confirmarlo.",
               lang,
             )
-          : t(
-          `Thanks ${order.customerName}! We emailed a confirmation to you.`,
-          `¡Gracias ${order.customerName}! Te enviamos la confirmación por correo.`,
-          lang,
-        )}
+          : emailedFailed
+            ? t(
+                "We saved your order. We could not send the confirmation email.",
+                "Guardamos tu pedido. No pudimos enviar el correo de confirmación.",
+                lang,
+              )
+            : t(
+                `Thanks ${order.customerName}! We emailed a confirmation to you.`,
+                `¡Gracias ${order.customerName}! Te enviamos la confirmación por correo.`,
+                lang,
+              )}
       </p>
 
       <div className="space-y-3 rounded-[18px] bg-white p-5 text-left shadow-sm">

@@ -72,19 +72,48 @@ export async function createSquareCheckout(input: {
   return { url: link.url, squareOrderId: link.order_id ?? null };
 }
 
-export async function squareOrderIsPaid(squareOrderId: string) {
-  const data = await squareFetch(`/v2/orders/${encodeURIComponent(squareOrderId)}`);
-  const order = data.order as {
-    state?: string;
-    tenders?: unknown[];
-    net_amount_due_money?: { amount?: number };
-    reference_id?: string;
-    ticket_name?: string;
-  };
+type SquareOrderSnapshot = {
+  state?: string;
+  tenders?: unknown[];
+  net_amount_due_money?: { amount?: number };
+  total_money?: { amount?: number };
+};
+
+function squareOrderPaid(order: SquareOrderSnapshot | undefined): boolean {
   if (!order) return false;
   if (order.state === "COMPLETED") return true;
   if ((order.tenders?.length ?? 0) > 0) return true;
   return (order.net_amount_due_money?.amount ?? 1) === 0;
+}
+
+export async function fetchSquareOrderState(squareOrderId: string): Promise<{
+  squareOrderId: string;
+  paid: boolean;
+  amountCents: number;
+}> {
+  const data = await squareFetch(`/v2/orders/${encodeURIComponent(squareOrderId)}`);
+  const order = data.order as SquareOrderSnapshot | undefined;
+  return {
+    squareOrderId,
+    paid: squareOrderPaid(order),
+    amountCents: order?.total_money?.amount ?? 0,
+  };
+}
+
+export async function squareOrderIsPaid(squareOrderId: string) {
+  const { paid } = await fetchSquareOrderState(squareOrderId);
+  return paid;
+}
+
+export function squarePaymentMatches(
+  stored: { storedSquareOrderId: string | null | undefined; totalCents: number },
+  square: { squareOrderId: string; paid: boolean; amountCents: number },
+): boolean {
+  if (stored.totalCents === 0) return true;
+  if (!stored.storedSquareOrderId) return false;
+  if (stored.storedSquareOrderId !== square.squareOrderId) return false;
+  if (!square.paid) return false;
+  return square.amountCents === stored.totalCents;
 }
 
 export function expectedSquareSignature(notificationUrl: string, body: string, signatureKey: string) {

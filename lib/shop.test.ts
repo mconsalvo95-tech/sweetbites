@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { isAllowedWantedOn, minWantedOnIso, nextAllowedWantedOn } from "./shop";
+import { addShopDays, isAllowedWantedOn, minWantedOnIso, nextAllowedWantedOn } from "./shop";
 
-const fixedToday = new Date(2026, 9, 1); // 1 Oct 2026 local
+const fixedToday = new Date("2026-10-01T18:00:00Z"); // 1 Oct 2026 in America/Edmonton
 
 describe("minWantedOnIso", () => {
-  it("is local date plus two calendar days including month rollover", () => {
+  it("is shop date plus two calendar days including month rollover", () => {
     expect(minWantedOnIso(fixedToday)).toBe("2026-10-03");
-    expect(minWantedOnIso(new Date(2026, 0, 30))).toBe("2026-02-01");
-    expect(minWantedOnIso(new Date(2025, 11, 31))).toBe("2026-01-02");
+    expect(minWantedOnIso(new Date("2026-01-30T18:00:00Z"))).toBe("2026-02-01");
+    expect(minWantedOnIso(new Date("2025-12-31T18:00:00Z"))).toBe("2026-01-02");
+  });
+
+  it("uses Edmonton shop day near UTC midnight", () => {
+    expect(minWantedOnIso(new Date("2026-11-06T01:00:00Z"))).toBe("2026-11-07");
   });
 });
 
@@ -33,13 +37,8 @@ describe("nextAllowedWantedOn", () => {
   it("returns minimum when every day in the scan is blocked", () => {
     const min = minWantedOnIso(fixedToday);
     const allBlocked: string[] = [];
-    const [y, m, d] = min.split("-").map(Number);
-    const cur = new Date(y, m - 1, d);
     for (let i = 0; i < 366; i++) {
-      allBlocked.push(
-        `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`,
-      );
-      cur.setDate(cur.getDate() + 1);
+      allBlocked.push(addShopDays(min, i));
     }
     expect(nextAllowedWantedOn(min, allBlocked, fixedToday)).toBe(min);
   });

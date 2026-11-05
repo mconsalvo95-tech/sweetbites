@@ -14,6 +14,7 @@ const ADMIN_STATUSES = new Set(["pending", "completed", "sent", "done", "cancell
 
 type OrderStatusRow = {
   status: string;
+  payment_status: string | null;
   user_id: string | null;
   customer_email: string | null;
   customer_name: string;
@@ -53,7 +54,7 @@ export async function POST(
   const { data: row, error: fetchErr } = await admin
     .from("orders")
     .select(
-      "status, user_id, customer_email, customer_name, lang, ship_street, ship_city, ship_province, ship_postal",
+      "status, payment_status, user_id, customer_email, customer_name, lang, ship_street, ship_city, ship_province, ship_postal",
     )
     .eq("id", id)
     .maybeSingle();
@@ -76,6 +77,18 @@ export async function POST(
     ? await supabase.from("profiles").select("role").eq("id", userId).maybeSingle()
     : { data: null };
   const isAdmin = profile?.role === "admin";
+
+  if (
+    !isAdmin &&
+    next === "cancelled" &&
+    order.user_id === userId &&
+    order.payment_status === "paid"
+  ) {
+    return NextResponse.json(
+      { error: "Paid orders must be cancelled by the shop" },
+      { status: 403 },
+    );
+  }
 
   let allowed = false;
   if (isAdmin) allowed = true;

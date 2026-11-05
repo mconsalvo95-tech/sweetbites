@@ -1,7 +1,7 @@
 import { t } from "./format";
 import type { Lang } from "./types";
 
-export const LOCAL_DELIVERY_CENTS = 600;
+const SHOP_TZ = "America/Edmonton";
 
 export const shop = {
   name: "Sweetbites",
@@ -23,13 +23,31 @@ export function localDateIso(d = new Date()) {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
+/** Today's calendar date in the shop time zone (Red Deer, AB). */
+export function shopDayIso(d = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: SHOP_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+export function addShopDays(iso: string, days: number): string {
+  const [y, m, day] = iso.split("-").map(Number);
+  const utc = new Date(Date.UTC(y, m - 1, day));
+  utc.setUTCDate(utc.getUTCDate() + days);
+  const yy = utc.getUTCFullYear();
+  const mm = String(utc.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(utc.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
 export const WANTED_ON_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Earliest selectable order date: today + 2 local calendar days (same-day / next-day blocked). */
+/** Earliest selectable order date: today + 2 shop calendar days (same-day / next-day blocked). */
 export function minWantedOnIso(d = new Date()): string {
-  const local = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  local.setDate(local.getDate() + 2);
-  return localDateIso(local);
+  return addShopDays(shopDayIso(d), 2);
 }
 
 export function isAllowedWantedOn(iso: string, d = new Date(), blockedDates: string[] = []): boolean {
@@ -43,13 +61,10 @@ export function isAllowedWantedOn(iso: string, d = new Date(), blockedDates: str
 export function nextAllowedWantedOn(fromIso: string, blockedDates: string[] = [], d = new Date()): string {
   const min = minWantedOnIso(d);
   const start = WANTED_ON_RE.test(fromIso) && fromIso >= min ? fromIso : min;
-  const [y, m, day] = start.split("-").map(Number);
-  const cur = new Date(y, m - 1, day);
   // ponytail: scan up to 366 days; extend if you block a full year+
   for (let i = 0; i < 366; i++) {
-    const iso = localDateIso(cur);
+    const iso = addShopDays(start, i);
     if (isAllowedWantedOn(iso, d, blockedDates)) return iso;
-    cur.setDate(cur.getDate() + 1);
   }
   return min;
 }

@@ -389,6 +389,7 @@ export default function CartPage() {
           serviceNameEn: selectedService?.nameEn,
           serviceNameEs: selectedService?.nameEs,
           paymentStatus: data.checkoutUrl ? "unpaid" : "paid",
+          emailed: data.emailed,
         }));
       }
 

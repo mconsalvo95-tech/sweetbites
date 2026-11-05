@@ -112,7 +112,8 @@ export async function getShippingRates(
   items: ShipItem[],
 ): Promise<ShippingQuote> {
   const postal = compactPostal(destPostal);
-  if (cpcEnabled() && items.length) {
+  if (cpcEnabled()) {
+    if (!items.length) throw new Error("Shipping quote unavailable");
     try {
       const parcel = await parcelFor(items);
       const quotes = await cpcGetRates({
@@ -125,6 +126,7 @@ export async function getShippingRates(
     } catch (err) {
       console.warn("CPC Get Rates failed", err instanceof Error ? err.message : err);
     }
+    throw new Error("Shipping quote unavailable");
   }
   return { rates: getMockShippingRates(normalizePostal(destPostal)), source: "mock" };
 }

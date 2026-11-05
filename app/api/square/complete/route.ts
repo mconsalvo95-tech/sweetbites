@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { markOrderPaid, orderStatusToken } from "@/lib/orders";
-import { squareEnabled, squareOrderIsPaid } from "@/lib/square";
-import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { squareEnabled } from "@/lib/square";
 
 function site() {
   return process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "https://sweetbites.shop";
@@ -19,7 +18,6 @@ function statusRedirect(orderId: string, query: Record<string, string>) {
 
 export async function GET(request: NextRequest) {
   const orderId = request.nextUrl.searchParams.get("order_id");
-  const squareOrderId = request.nextUrl.searchParams.get("orderId");
   if (!orderId) {
     return NextResponse.redirect(`${site()}/cart?canceled=1`);
   }
@@ -27,21 +25,19 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(statusRedirect(orderId, {}));
   }
 
+  let isPaid = false;
   try {
-    const admin = getSupabaseAdmin();
-    const stored = admin
-      ? (await admin.from("orders").select("square_order_id").eq("id", orderId).maybeSingle()).data
-          ?.square_order_id
-      : null;
-    const sqId = squareOrderId || stored;
-    if (!sqId || !(await squareOrderIsPaid(sqId))) {
-      return NextResponse.redirect(statusRedirect(orderId, {}));
-    }
-    await markOrderPaid(orderId, request.nextUrl.searchParams.get("transactionId") ?? undefined);
+    const result = await markOrderPaid(
+      orderId,
+      request.nextUrl.searchParams.get("transactionId") ?? undefined,
+    );
+    isPaid = result.isPaid;
   } catch (err) {
     console.error("square complete", err);
     return NextResponse.redirect(statusRedirect(orderId, {}));
   }
 
-  return NextResponse.redirect(statusRedirect(orderId, { paid: "1" }));
+  return NextResponse.redirect(
+    statusRedirect(orderId, isPaid ? { paid: "1" } : {}),
+  );
 }

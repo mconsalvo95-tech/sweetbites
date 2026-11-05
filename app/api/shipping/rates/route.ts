@@ -19,6 +19,7 @@ export async function POST(request: Request) {
     return NextResponse.json(quote);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Rates failed";
-    return NextResponse.json({ error: message }, { status: 500 });
+    const status = message === "Shipping quote unavailable" ? 503 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }

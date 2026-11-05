@@ -34,8 +34,8 @@ import {
 import { addressFromPhoton, provinceCode } from "../lib/address-search";
 import {
   isAllowedWantedOn,
-  localDateIso,
   minWantedOnIso,
+  shopDayIso,
   nextAllowedWantedOn,
   wantedNote,
   wantedOnFromNotes,
@@ -52,9 +52,9 @@ function assert(cond: unknown, msg: string): asserts cond {
 async function main() {
   const okDate = minWantedOnIso();
   assert(isAllowedWantedOn(okDate), "min wanted date should be allowed");
-  assert(!isAllowedWantedOn(localDateIso()), "today should not be allowed for orders");
+  assert(!isAllowedWantedOn(shopDayIso()), "today should not be allowed for orders");
 
-  const fixedToday = new Date(2026, 9, 1);
+  const fixedToday = new Date("2026-10-01T18:00:00Z");
   assert(minWantedOnIso(fixedToday) === "2026-10-03", "Oct 1 + 2 days is Oct 3 earliest");
   assert(!isAllowedWantedOn("2026-10-01", fixedToday), "same-day order date should fail");
   assert(!isAllowedWantedOn("2026-10-02", fixedToday), "next-day order date should fail");
@@ -251,7 +251,7 @@ async function main() {
       customerName: "Self Check",
       customerEmail: "self-check@example.com",
       phone: "4165550100",
-      wantedOn: localDateIso(),
+      wantedOn: shopDayIso(),
       foodCents: 700,
       shippingCents: 0,
       totalCents: 700,
@@ -374,7 +374,9 @@ async function main() {
         qty: 1,
         unitPriceCents: 1890,
         imageUrl: "",
-        optionsJson: {},
+        optionsJson: {
+          "Pick your flavors": ["Dark chocolate", "Salted caramel", "Raspberry jam", "Toasted hazelnut"],
+        },
       },
     ],
   });

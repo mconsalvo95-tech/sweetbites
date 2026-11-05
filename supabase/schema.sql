@@ -206,10 +206,6 @@ create table if not exists promo_codes (
 
 alter table promo_codes enable row level security;
 
-drop policy if exists "Public read active promos" on promo_codes;
-create policy "Public read active promos" on promo_codes
-  for select using (active = true);
-
 alter table orders add column if not exists promo_code text;
 alter table orders add column if not exists discount_cents int not null default 0;
 alter table orders add column if not exists customer_email text;

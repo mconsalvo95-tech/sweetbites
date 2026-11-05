@@ -16,7 +16,7 @@ Open [http://localhost:3000](http://localhost:3000).
 1. Create a project at [supabase.com](https://supabase.com)
 2. Run `supabase/schema.sql` then `supabase/seed.sql` in the SQL editor
 3. Copy `.env.example` → `.env.local` and set `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-4. **Auth:** In Supabase → Authentication → Providers, enable **Google** and **Facebook**
+4. **Auth:** In Supabase → Authentication → Providers, enable **Google**
 5. **URLs:** Set Site URL to `http://localhost:3000` (or production domain). Add redirect URL(s):
    - `http://localhost:3000/auth/callback`
    - `https://your-domain.com/auth/callback`
@@ -25,7 +25,7 @@ Without env vars the app uses the hardcoded catalog and writes orders to `.local
 
 ## Customer accounts
 
-- `/login` — email/password + Google + Facebook
+- `/login` — email/password + Google
 - `/signup` — create account (default role: customer)
 - `/account` — orders, wholesale status, profile, placeholders for payments/addresses
 - Guest checkout still works; logged-in orders attach `user_id` automatically

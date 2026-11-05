@@ -16,9 +16,12 @@ export function rateLimit(key: string, limit: number, windowMs: number): boolean
 }
 
 export function clientIp(request: Request): string {
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
   const real = request.headers.get("x-real-ip");
   if (real) return real.trim();
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (forwarded) {
+    const hops = forwarded.split(",").map((h) => h.trim()).filter(Boolean);
+    if (hops.length) return hops[hops.length - 1];
+  }
   return "local";
 }
