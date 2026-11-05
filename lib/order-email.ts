@@ -22,7 +22,13 @@ export type OrderEmailInput = {
   promoCode?: string | null;
   items: CartLine[];
   siteUrl: string;
+  statusToken?: string;
 };
+
+function orderStatusUrl(order: OrderEmailInput) {
+  const base = `${order.siteUrl}/order-status/${order.id}`;
+  return order.statusToken ? `${base}?t=${order.statusToken}` : base;
+}
 
 function esc(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -89,7 +95,7 @@ const RECEIPT_CDN = "https://sweetbites.shop";
 
 export function customerReceiptHtml(order: OrderEmailInput) {
   const lang = order.lang;
-  const statusUrl = `${order.siteUrl}/order-status/${order.id}`;
+  const statusUrl = orderStatusUrl(order);
   const contactUrl = `${order.siteUrl}/contact`;
   const wordmark = `${RECEIPT_CDN}/logos/receipt-wordmark.png`;
   const mark = `${RECEIPT_CDN}/logos/receipt-mark.png`;
@@ -189,8 +195,8 @@ export function customerOrderEmail(order: OrderEmailInput): { subject: string; t
         : `\nPickup date: ${order.wantedOn}`
     : "";
   const text = es
-    ? `Hola ${order.customerName},\n\nRecibimos tu pedido #${order.id.slice(0, 8)}.\n\n${how}${when}${addr ? `\n${addr}` : ""}\n\n${itemLines(order.items, "es")}\n\nComida: ${formatCad(order.foodCents)}\n${disc}${ship}Total: ${formatCad(order.totalCents)}\n\nVer pedido: ${order.siteUrl}/order-status/${order.id}\n\nSweetbites`
-    : `Hi ${order.customerName},\n\nWe got your order #${order.id.slice(0, 8)}.\n\n${how}${when}${addr ? `\n${addr}` : ""}\n\n${itemLines(order.items, "en")}\n\nFood: ${formatCad(order.foodCents)}\n${disc}${ship}Total: ${formatCad(order.totalCents)}\n\nView order: ${order.siteUrl}/order-status/${order.id}\n\nSweetbites`;
+    ? `Hola ${order.customerName},\n\nRecibimos tu pedido #${order.id.slice(0, 8)}.\n\n${how}${when}${addr ? `\n${addr}` : ""}\n\n${itemLines(order.items, "es")}\n\nComida: ${formatCad(order.foodCents)}\n${disc}${ship}Total: ${formatCad(order.totalCents)}\n\nVer pedido: ${orderStatusUrl(order)}\n\nSweetbites`
+    : `Hi ${order.customerName},\n\nWe got your order #${order.id.slice(0, 8)}.\n\n${how}${when}${addr ? `\n${addr}` : ""}\n\n${itemLines(order.items, "en")}\n\nFood: ${formatCad(order.foodCents)}\n${disc}${ship}Total: ${formatCad(order.totalCents)}\n\nView order: ${orderStatusUrl(order)}\n\nSweetbites`;
   return { subject, text, html: customerReceiptHtml(order) };
 }
 
@@ -212,7 +218,7 @@ export function ownerOrderEmail(order: OrderEmailInput): { subject: string; text
       ? `Promo${order.promoCode ? ` (${order.promoCode})` : ""}: −${formatCad(order.discountCents)}\n`
       : "";
   const ship = order.fulfillment === "pickup" ? "" : `Shipping: ${formatCad(order.shippingCents)}\n`;
-  const text = `New Sweetbites order\n\n#${order.id}\n${fulfillmentLabel(order.fulfillment, "en")}${when}${addr ? `\n${addr}` : ""}\n\n${order.customerName}\n${order.customerEmail}\n${order.phone}\n${notes}\n${itemLines(order.items, "en")}\n\nFood: ${formatCad(order.foodCents)}\n${disc}${ship}Total: ${formatCad(order.totalCents)}\n\nOpen: ${order.siteUrl}/order-status/${order.id}`;
+  const text = `New Sweetbites order\n\n#${order.id}\n${fulfillmentLabel(order.fulfillment, "en")}${when}${addr ? `\n${addr}` : ""}\n\n${order.customerName}\n${order.customerEmail}\n${order.phone}\n${notes}\n${itemLines(order.items, "en")}\n\nFood: ${formatCad(order.foodCents)}\n${disc}${ship}Total: ${formatCad(order.totalCents)}\n\nOpen: ${orderStatusUrl(order)}`;
   return { subject, text };
 }
 

@@ -5,12 +5,13 @@ import { squareOrderIsPaid, verifySquareSignature } from "@/lib/square";
 export async function POST(request: NextRequest) {
   const secret = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY?.trim();
   const raw = await request.text();
-  if (secret) {
-    const header = request.headers.get("x-square-hmacsha256-signature") ?? "";
-    const url = `${process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "")}/api/square/webhook`;
-    if (!verifySquareSignature(url, raw, header, secret)) {
-      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
-    }
+  if (!secret) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const header = request.headers.get("x-square-hmacsha256-signature") ?? "";
+  const url = `${process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "")}/api/square/webhook`;
+  if (!verifySquareSignature(url, raw, header, secret)) {
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
   let body: {

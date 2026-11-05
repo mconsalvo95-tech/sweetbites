@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { EMAIL_RE } from "@/lib/format";
 import { sendOrderEmails } from "@/lib/mail";
-import { attachSquareOrder, markOrderPaid, submitOrder, type SubmitOrderInput } from "@/lib/orders";
+import {
+  attachSquareOrder,
+  markOrderPaid,
+  OrderInputError,
+  submitOrder,
+  type SubmitOrderInput,
+} from "@/lib/orders";
 import { createSquareCheckout, squareEnabled } from "@/lib/square";
 import { getAuthUserId } from "@/lib/supabase-server";
 
@@ -58,7 +64,8 @@ export async function POST(request: Request) {
         discountCents: result.discountCents,
         totalCents: result.totalCents,
         promoCode: result.promoCode,
-        items: body.items,
+        statusToken: result.statusToken,
+        items: result.items,
       };
       // ponytail: sandbox testing panel rarely returns to localhost; production still emails on paid
       if (process.env.SQUARE_ENV !== "production") {
@@ -96,19 +103,25 @@ export async function POST(request: Request) {
         discountCents: result.discountCents,
         totalCents: result.totalCents,
         promoCode: result.promoCode,
-        items: body.items,
+        statusToken: result.statusToken,
+        items: result.items,
       });
     } catch (err) {
       console.error("order email error", err);
     }
     return NextResponse.json({ ...result, emailed });
   } catch (err) {
+    if (err instanceof OrderInputError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
     const message = err instanceof Error ? err.message : "Order failed";
     const status =
       message === "Invalid promo code" ||
       message === "Promo minimum not met" ||
       message === "Select a shipping option" ||
-      message === "Select a date"
+      message === "Select a date" ||
+      message === "Order date too soon" ||
+      message === "Order date not available"
         ? 400
         : 500;
     return NextResponse.json({ error: message }, { status });

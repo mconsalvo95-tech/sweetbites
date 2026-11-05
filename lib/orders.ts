@@ -1,7 +1,8 @@
-import { randomUUID } from "crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "crypto";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
-import type { CartLine, Fulfillment, Lang, OrderRecord } from "./types";
+import type { CartLine, Fulfillment, Lang, OrderRecord, Product } from "./types";
+import { fetchCatalog } from "./catalog";
 import { getSupabase } from "./supabase";
 import { getSupabaseAdmin } from "./supabase-admin";
 import { getOriginPostal, resolveShipRate } from "./shipping";
@@ -9,8 +10,105 @@ import { quotePromoCode } from "./promos";
 import { sendOrderEmails } from "./mail";
 import { isBlockedOrderDate } from "./order-calendar";
 import { fetchOrderCalendarServer } from "./order-calendar-server";
-import { isAllowedWantedOn, WANTED_ON_RE, wantedNote, wantedOnFromNotes } from "./shop";
+import { isAllowedWantedOn, localDateIso, WANTED_ON_RE, wantedNote, wantedOnFromNotes } from "./shop";
 import type { SupabaseClient } from "@supabase/supabase-js";
+
+const DEV_ORDER_STATUS_KEY = "dev-order-status";
+export const MENU_PRICE_CHANGED_MSG =
+  "Menu prices changed. Refresh your cart and try again.";
+
+export class OrderInputError extends Error {
+  status: number;
+  constructor(message: string, status = 400) {
+    super(message);
+    this.status = status;
+  }
+}
+
+export function isValidOrderQty(qty: number): boolean {
+  return Number.isInteger(qty) && qty >= 1 && qty <= 99;
+}
+
+function productLeadDays(leadDays: unknown): number {
+  return typeof leadDays === "number" && Number.isInteger(leadDays) && leadDays >= 0 ? leadDays : 0;
+}
+
+export function minWantedOnForLeadDays(maxLead: number, d = new Date()): string {
+  const local = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  local.setDate(local.getDate() + maxLead);
+  return localDateIso(local);
+}
+
+export type OrderCatalogProduct = Pick<Product, "id" | "priceCents" | "nameEn" | "nameEs" | "leadDays">;
+
+export function resolveOrderLines(
+  items: CartLine[],
+  productsById: Map<string, OrderCatalogProduct>,
+): { lines: CartLine[]; foodCents: number; maxLead: number } {
+  if (!items.length) throw new OrderInputError("Invalid order");
+  let foodCents = 0;
+  let maxLead = 0;
+  const lines: CartLine[] = [];
+  for (const item of items) {
+    if (!isValidOrderQty(item.qty)) throw new OrderInputError("Invalid quantity");
+    const product = productsById.get(item.productId);
+    if (!product) throw new OrderInputError("Unknown product");
+    if (item.unitPriceCents !== product.priceCents) {
+      throw new OrderInputError(MENU_PRICE_CHANGED_MSG);
+    }
+    maxLead = Math.max(maxLead, productLeadDays(product.leadDays));
+    foodCents += product.priceCents * item.qty;
+    lines.push({
+      ...item,
+      unitPriceCents: product.priceCents,
+      nameEn: product.nameEn,
+      nameEs: product.nameEs,
+    });
+  }
+  return { lines, foodCents, maxLead };
+}
+
+function orderStatusHmacKey(): string {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  if (key) return key;
+  if (process.env.NODE_ENV !== "production") return DEV_ORDER_STATUS_KEY;
+  return "";
+}
+
+export function orderStatusToken(orderId: string): string {
+  const key = orderStatusHmacKey();
+  if (!key) throw new OrderInputError("Missing SUPABASE_SERVICE_ROLE_KEY", 503);
+  return createHmac("sha256", key).update(orderId).digest("hex");
+}
+
+export function orderStatusTokenMatches(orderId: string, token: string): boolean {
+  if (!token) return false;
+  let expected: string;
+  try {
+    expected = orderStatusToken(orderId);
+  } catch {
+    return false;
+  }
+  if (token.length !== expected.length) return false;
+  try {
+    return timingSafeEqual(Buffer.from(token, "utf8"), Buffer.from(expected, "utf8"));
+  } catch {
+    return false;
+  }
+}
+
+function requireProductionOrderPersistence(): void {
+  if (process.env.NODE_ENV !== "production") return;
+  if (!getSupabase()) {
+    throw new OrderInputError(
+      "Orders unavailable: set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY",
+      503,
+    );
+  }
+  if (!getSupabaseAdmin()) {
+    throw new OrderInputError("Orders unavailable: set SUPABASE_SERVICE_ROLE_KEY", 503);
+  }
+}
 
 const LOCAL_FILE = join(process.cwd(), ".local-orders.json");
 
@@ -58,37 +156,47 @@ export type SubmitOrderResult = {
   discountCents: number;
   totalCents: number;
   promoCode: string | null;
+  statusToken: string;
+  items: CartLine[];
 };
 
 export async function submitOrder(
   input: SubmitOrderInput,
   userId?: string | null,
 ): Promise<SubmitOrderResult> {
+  requireProductionOrderPersistence();
+
   const fulfillment: Fulfillment = input.fulfillment === "delivery" ? "pickup" : input.fulfillment;
   if (!WANTED_ON_RE.test(input.wantedOn ?? "")) {
-    throw new Error("Select a date");
+    throw new OrderInputError("Select a date");
   }
-  const { blocked_dates } = await fetchOrderCalendarServer();
   const wantedOn = input.wantedOn as string;
+
+  const { products } = await fetchCatalog();
+  const productsById = new Map(products.map((p) => [p.id, p]));
+  const { lines: orderItems, foodCents, maxLead } = resolveOrderLines(input.items, productsById);
+
+  const leadMin = minWantedOnForLeadDays(maxLead);
+  if (wantedOn < leadMin) {
+    throw new OrderInputError("Order date too soon");
+  }
+
+  const { blocked_dates } = await fetchOrderCalendarServer();
   if (!isAllowedWantedOn(wantedOn, new Date(), blocked_dates)) {
-    throw new Error(
+    throw new OrderInputError(
       isBlockedOrderDate(wantedOn, blocked_dates) ? "Order date not available" : "Order date too soon",
     );
   }
   const notes = wantedNote(fulfillment === "ship" ? "ship" : "pickup", input.wantedOn as string, input.notes, input.lang);
 
-  const foodCents = input.items.reduce(
-    (sum, item) => sum + item.unitPriceCents * item.qty,
-    0,
-  );
-  let shippingCents = Math.max(0, input.shippingCents);
+  let shippingCents = 0;
   let serviceNameEn = input.serviceNameEn;
   let serviceNameEs = input.serviceNameEs;
   if (fulfillment === "ship") {
     const quoted = await resolveShipRate({
       destPostal: input.shipPostal,
       serviceCode: input.serviceCode,
-      items: input.items,
+      items: orderItems,
     });
     shippingCents = quoted.rateCents;
     serviceNameEn = quoted.nameEn;
@@ -100,7 +208,7 @@ export async function submitOrder(
   if (input.promoCode?.trim()) {
     const quote = await quotePromoCode(input.promoCode, foodCents);
     if (!quote.ok) {
-      throw new Error(
+      throw new OrderInputError(
         quote.error === "min_order" ? "Promo minimum not met" : "Invalid promo code",
       );
     }
@@ -111,10 +219,11 @@ export async function submitOrder(
   const totalCents = foodCents - discountCents + shippingCents;
   const supabase = getSupabase();
   const id = randomUUID();
+  const statusToken = orderStatusToken(id);
 
   if (supabase) {
-    // ponytail: insert without RETURNING — SELECT RLS hides the new row from the anon client
-    const { error: orderError } = await supabase.from("orders").insert({
+    const db = getSupabaseAdmin() ?? supabase;
+    const { error: orderError } = await db.from("orders").insert({
       id,
       status: "pending",
       fulfillment,
@@ -140,7 +249,7 @@ export async function submitOrder(
       throw new Error(orderError.message);
     }
 
-    const orderItems = input.items.map((item) => ({
+    const orderItemsRows = orderItems.map((item) => ({
       order_id: id,
       product_id: item.productId,
       qty: item.qty,
@@ -150,11 +259,11 @@ export async function submitOrder(
       name_es: item.nameEs,
     }));
 
-    const { error: itemsError } = await supabase.from("order_items").insert(orderItems);
+    const { error: itemsError } = await db.from("order_items").insert(orderItemsRows);
     if (itemsError) throw new Error(itemsError.message);
 
     if (fulfillment === "ship" && input.serviceCode) {
-      const { error: shipError } = await supabase.from("shipments").insert({
+      const { error: shipError } = await db.from("shipments").insert({
         order_id: id,
         carrier: "canada_post",
         service_code: input.serviceCode,
@@ -178,6 +287,8 @@ export async function submitOrder(
       discountCents,
       totalCents,
       promoCode,
+      statusToken,
+      items: orderItems,
     };
   }
 
@@ -202,7 +313,7 @@ export async function submitOrder(
     discountCents,
     promoCode: promoCode ?? undefined,
     paymentStatus: input.paymentStatus ?? "paid",
-    items: input.items,
+    items: orderItems,
     serviceCode: input.serviceCode,
     serviceNameEn,
     serviceNameEs,
@@ -220,6 +331,8 @@ export async function submitOrder(
     discountCents,
     totalCents,
     promoCode,
+    statusToken,
+    items: orderItems,
   };
 }
 
@@ -227,7 +340,7 @@ export async function getOrder(
   id: string,
   client?: SupabaseClient | null,
 ): Promise<OrderRecord | null> {
-  const supabase = client ?? getSupabase();
+  const supabase = client !== undefined ? client : getSupabase();
 
   if (supabase) {
     const { data: order, error } = await supabase
@@ -275,8 +388,8 @@ export async function getOrder(
         lineId: item.id,
         productId: item.product_id,
         slug: "",
-        nameEn: "",
-        nameEs: "",
+        nameEn: item.name_en ?? "",
+        nameEs: item.name_es ?? "",
         qty: item.qty,
         unitPriceCents: item.unit_price_cents,
         imageUrl: "",
@@ -347,6 +460,7 @@ export async function markOrderPaid(orderId: string, squarePaymentId?: string) {
       discountCents: order.discount_cents ?? 0,
       totalCents: order.total_cents,
       promoCode: order.promo_code,
+      statusToken: orderStatusToken(order.id),
       items: (items ?? []).map((item) => ({
         lineId: item.product_id ?? "",
         productId: item.product_id ?? "",

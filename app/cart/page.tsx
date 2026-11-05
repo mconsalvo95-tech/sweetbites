@@ -398,7 +398,8 @@ export default function CartPage() {
       }
 
       clearCart();
-      router.push(`/order-status/${data.id}`);
+      const statusQs = data.statusToken ? `?t=${encodeURIComponent(data.statusToken as string)}` : "";
+      router.push(`/order-status/${data.id}${statusQs}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error");
     } finally {

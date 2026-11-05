@@ -4,7 +4,14 @@
  */
 import { existsSync, unlinkSync } from "fs";
 import { join } from "path";
-import { submitOrder, getOrder } from "../lib/orders";
+import {
+  getOrder,
+  MENU_PRICE_CHANGED_MSG,
+  OrderInputError,
+  orderStatusToken,
+  submitOrder,
+} from "../lib/orders";
+import { PRODUCTS } from "../lib/catalog";
 import { quotePromo } from "../lib/promos";
 import { customerOrderEmail, ownerOrderEmail } from "../lib/order-email";
 import {
@@ -148,8 +155,12 @@ async function main() {
 
   assert(!quotePromo(null, 2000).ok, "Missing code should be invalid");
 
+  const chocChip = PRODUCTS.find((p) => p.id === "prod-choc-chip");
+  if (!chocChip) throw new Error("Missing prod-choc-chip fixture");
+  const sampleId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+  const sampleToken = orderStatusToken(sampleId);
   const sample = {
-    id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    id: sampleId,
     lang: "en" as const,
     fulfillment: "pickup" as const,
     customerName: "Maya",
@@ -175,6 +186,7 @@ async function main() {
       },
     ],
     siteUrl: "http://localhost:3000",
+    statusToken: sampleToken,
   };
   const buyer = customerOrderEmail(sample);
   assert(buyer.text.includes("Maya") && buyer.text.includes("$6.30"), "buyer email should name + total");
@@ -184,6 +196,7 @@ async function main() {
   );
   assert(buyer.text.includes(`Pickup date: ${okDate}`), "pickup confirmation should include requested date");
   assert(buyer.html.includes("Review order") && buyer.html.includes("Order #aaaaaaaa"), "receipt should have order number and review button");
+  assert(buyer.html.includes(`?t=${sampleToken}`), "customer status link should include guest token");
   assert(buyer.html.includes("Need to change order date?"), "receipt should offer a date change instead of cancel");
   assert(!buyer.html.includes("Cancel order"), "receipt should not offer cancellation");
   assert(buyer.html.includes("https://sweetbites.shop/logos/receipt-wordmark.png"), "receipt header should use production wordmark");
@@ -220,7 +233,7 @@ async function main() {
           nameEn: "Brown butter chocolate chip",
           nameEs: "Chip de chocolate",
           qty: 1,
-          unitPriceCents: 700,
+          unitPriceCents: chocChip.priceCents,
           imageUrl: "",
           optionsJson: {},
         },
@@ -228,7 +241,7 @@ async function main() {
     });
     throw new Error("Expected submit without date to fail");
   } catch (err) {
-    assert(err instanceof Error && err.message === "Select a date", "missing date should fail");
+    assert(err instanceof OrderInputError && err.message === "Select a date", "missing date should fail");
   }
 
   try {
@@ -250,7 +263,7 @@ async function main() {
           nameEn: "Brown butter chocolate chip",
           nameEs: "Chip de chocolate",
           qty: 1,
-          unitPriceCents: 700,
+          unitPriceCents: chocChip.priceCents,
           imageUrl: "",
           optionsJson: {},
         },
@@ -258,7 +271,37 @@ async function main() {
     });
     throw new Error("Expected submit with today to fail");
   } catch (err) {
-    assert(err instanceof Error && err.message === "Order date too soon", "today should fail server validation");
+    assert(err instanceof OrderInputError && err.message === "Order date too soon", "today should fail server validation");
+  }
+
+  try {
+    await submitOrder({
+      fulfillment: "pickup",
+      lang: "en",
+      customerName: "Self Check",
+      customerEmail: "self-check@example.com",
+      phone: "4165550100",
+      wantedOn: okDate,
+      foodCents: 1,
+      shippingCents: 0,
+      totalCents: 1,
+      items: [
+        {
+          lineId: "tamper",
+          productId: "prod-choc-chip",
+          slug: chocChip.slug,
+          nameEn: chocChip.nameEn,
+          nameEs: chocChip.nameEs,
+          qty: 1,
+          unitPriceCents: 1,
+          imageUrl: "",
+          optionsJson: {},
+        },
+      ],
+    });
+    throw new Error("Expected tampered price to fail");
+  } catch (err) {
+    assert(err instanceof OrderInputError && err.message === MENU_PRICE_CHANGED_MSG, "tampered unit price should fail");
   }
 
   const result = await submitOrder({

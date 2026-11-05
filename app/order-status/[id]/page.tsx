@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { useCart } from "@/lib/cart";
 import { useLang } from "@/lib/lang";
@@ -33,7 +33,9 @@ type OrderView = {
 
 export default function OrderStatusPage() {
   const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
   const id = params.id;
+  const statusToken = searchParams.get("t");
   const { lang } = useLang();
   const { user } = useAuth();
   const { clearCart } = useCart();
@@ -46,7 +48,8 @@ export default function OrderStatusPage() {
     if (!id) return;
     async function load() {
       try {
-        const res = await fetch(`/api/orders/${id}`);
+        const qs = statusToken ? `?t=${encodeURIComponent(statusToken)}` : "";
+        const res = await fetch(`/api/orders/${id}${qs}`);
         if (res.ok) {
           const data = await res.json();
           setOrder({ id, ...data });
@@ -63,7 +66,7 @@ export default function OrderStatusPage() {
       setLoading(false);
     }
     load().finally(() => setLoading(false));
-  }, [id]);
+  }, [id, statusToken]);
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("paid") !== "1") return;

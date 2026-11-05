@@ -102,12 +102,7 @@ create policy "Public read product_options" on product_options for select using 
 drop policy if exists "Public read option_values" on option_values;
 create policy "Public read option_values" on option_values for select using (true);
 
-drop policy if exists "Public insert orders" on orders;
-create policy "Public insert orders" on orders for insert with check (true);
-drop policy if exists "Public insert order_items" on order_items;
-create policy "Public insert order_items" on order_items for insert with check (true);
-drop policy if exists "Public insert shipments" on shipments;
-create policy "Public insert shipments" on shipments for insert with check (true);
+-- Orders, order_items, and shipments are inserted by the API using the service role (see lib/orders.ts).
 
 -- No public update/delete policies (deny by default)
 
