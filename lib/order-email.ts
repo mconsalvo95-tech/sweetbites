@@ -25,9 +25,56 @@ export type OrderEmailInput = {
   statusToken?: string;
 };
 
-function orderStatusUrl(order: OrderEmailInput) {
+type OrderStatusLink = Pick<OrderEmailInput, "id" | "siteUrl" | "statusToken">;
+
+function orderStatusUrl(order: OrderStatusLink) {
   const base = `${order.siteUrl}/order-status/${order.id}`;
   return order.statusToken ? `${base}?t=${order.statusToken}` : base;
+}
+
+export type OrderStatusNoticeInput = OrderStatusLink & {
+  lang: Lang;
+  customerName: string;
+  shipStreet?: string;
+  shipCity?: string;
+  shipProvince?: string;
+  shipPostal?: string;
+};
+
+function shipAddressLine(order: OrderStatusNoticeInput) {
+  const parts = [order.shipStreet, order.shipCity, order.shipProvince, order.shipPostal].filter(Boolean);
+  return parts.join(", ");
+}
+
+export function customerOrderCancelledEmail(order: OrderStatusNoticeInput): { subject: string; text: string } {
+  const id8 = order.id.slice(0, 8);
+  const link = orderStatusUrl(order);
+  if (order.lang === "es") {
+    return {
+      subject: `Sweetbites — pedido #${id8} cancelado`,
+      text: `Hola ${order.customerName}, tu pedido #${id8} ha sido cancelado.\n\nVer pedido: ${link}\n\nSweetbites`,
+    };
+  }
+  return {
+    subject: `Sweetbites — order #${id8} cancelled`,
+    text: `Hi ${order.customerName}, your order #${id8} has been cancelled.\n\nView order: ${link}\n\nSweetbites`,
+  };
+}
+
+export function customerOrderShippedEmail(order: OrderStatusNoticeInput): { subject: string; text: string } {
+  const id8 = order.id.slice(0, 8);
+  const link = orderStatusUrl(order);
+  const addr = shipAddressLine(order);
+  if (order.lang === "es") {
+    return {
+      subject: `Sweetbites — pedido #${id8} enviado`,
+      text: `Hola ${order.customerName}, tu pedido #${id8} está en camino.${addr ? `\n${addr}` : ""}\n\nVer pedido: ${link}\n\nSweetbites`,
+    };
+  }
+  return {
+    subject: `Sweetbites — order #${id8} shipped`,
+    text: `Hi ${order.customerName}, your order #${id8} is on its way.${addr ? `\n${addr}` : ""}\n\nView order: ${link}\n\nSweetbites`,
+  };
 }
 
 function esc(s: string) {

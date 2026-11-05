@@ -8,7 +8,6 @@ import { useCart } from "@/lib/cart";
 import { useLang } from "@/lib/lang";
 import { formatCad, pickName, t } from "@/lib/format";
 import { canCustomerCancel, type CartLine, type Fulfillment, type Lang } from "@/lib/types";
-import { getSupabaseBrowser } from "@/lib/supabase-browser";
 import { LocationContent } from "@/app/location/LocationContent";
 
 type OrderView = {
@@ -83,18 +82,22 @@ export default function OrderStatusPage() {
 
   const cancelOrder = async () => {
     if (!id || !user) return;
-    const supabase = getSupabaseBrowser();
-    if (!supabase) return;
     const ok = window.confirm(
       t("Cancel this order? The shop will stop preparing it.", "¿Cancelar este pedido? La tienda dejará de prepararlo.", lang),
     );
     if (!ok) return;
     setCancelBusy(true);
     setCancelMsg("");
-    const { error } = await supabase.rpc("cancel_own_order", { order_id: id });
+    const res = await fetch(`/api/orders/${id}/status`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "cancelled" }),
+    });
+    const data = (await res.json()) as { error?: string };
     setCancelBusy(false);
-    if (error) {
-      setCancelMsg(error.message);
+    if (!res.ok) {
+      setCancelMsg(data.error ?? res.statusText);
       return;
     }
     setOrder((prev) => (prev ? { ...prev, status: "cancelled" } : prev));

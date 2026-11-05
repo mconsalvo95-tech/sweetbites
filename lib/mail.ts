@@ -19,6 +19,14 @@ function fromAddress() {
   return `Sweetbites <${["onboarding", "resend.dev"].join("@")}>`;
 }
 
+export async function sendPlainEmail(to: string, subject: string, text: string): Promise<boolean> {
+  return sendResend(to, subject, text);
+}
+
+export function mailSiteUrl() {
+  return siteUrl();
+}
+
 async function sendResend(to: string, subject: string, text: string, html?: string) {
   const key = process.env.RESEND_API_KEY;
   const from = fromAddress();
