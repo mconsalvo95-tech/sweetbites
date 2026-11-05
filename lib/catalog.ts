@@ -250,11 +250,18 @@ export function getProductBySlug(slug: string): Product | undefined {
   return PRODUCTS.find((p) => p.slug === slug);
 }
 
+const demoCatalog = () => ({ categories: CATEGORIES, products: PRODUCTS });
+
+function requireLiveCatalog(): never {
+  throw new Error("Catalog unavailable");
+}
+
 export async function fetchCatalog(): Promise<{ categories: Category[]; products: Product[] }> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !key) {
-    return { categories: CATEGORIES, products: PRODUCTS };
+    if (process.env.NODE_ENV === "production") requireLiveCatalog();
+    return demoCatalog();
   }
 
   try {
@@ -272,7 +279,8 @@ export async function fetchCatalog(): Promise<{ categories: Category[]; products
     ]);
 
     if (catRes.error || prodRes.error || !catRes.data?.length) {
-      return { categories: CATEGORIES, products: PRODUCTS };
+      if (process.env.NODE_ENV === "production") requireLiveCatalog();
+      return demoCatalog();
     }
 
     const categories: Category[] = catRes.data.map((c) => ({
@@ -322,7 +330,8 @@ export async function fetchCatalog(): Promise<{ categories: Category[]; products
 
     return { categories, products };
   } catch {
-    return { categories: CATEGORIES, products: PRODUCTS };
+    if (process.env.NODE_ENV === "production") requireLiveCatalog();
+    return demoCatalog();
   }
 }
 
@@ -331,10 +340,3 @@ export async function getLiveProductBySlug(slug: string): Promise<Product | unde
   return products.find((p) => p.slug === slug) ?? getProductBySlug(slug);
 }
 
-export function getProductsByCategory(categoryId: string): Product[] {
-  return PRODUCTS.filter((p) => p.categoryId === categoryId);
-}
-
-export function getCategoryBySlug(slug: string): Category | undefined {
-  return CATEGORIES.find((c) => c.slug === slug);
-}

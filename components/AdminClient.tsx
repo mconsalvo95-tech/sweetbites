@@ -619,9 +619,6 @@ export function AdminClient() {
     let error = null as { message: string } | null;
     if (isNew) {
       ({ error } = await supabase.from("promo_codes").insert(payload));
-    } else if (prevCode !== payload.code) {
-      ({ error } = await supabase.from("promo_codes").delete().eq("code", prevCode));
-      if (!error) ({ error } = await supabase.from("promo_codes").insert(payload));
     } else {
       ({ error } = await supabase.from("promo_codes").update(payload).eq("code", prevCode));
     }

@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { quotePromoCode } from "@/lib/promos";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
+  if (!rateLimit(`promo:${clientIp(request)}`, 20, 10 * 60 * 1000)) {
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+  }
   try {
     const body = (await request.json()) as { code?: string; foodCents?: number };
     const foodCents = Number(body.foodCents);
@@ -14,7 +18,7 @@ export async function POST(request: Request) {
     }
     return NextResponse.json(quote);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Promo failed";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("promo check failed", err);
+    return NextResponse.json({ error: "Promo check failed" }, { status: 500 });
   }
 }

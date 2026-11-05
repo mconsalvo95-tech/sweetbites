@@ -482,10 +482,6 @@ export async function getOrder(
   return { ...local, wantedOn: local.wantedOn ?? wantedOnFromNotes(local.notes) };
 }
 
-export function getLocalOrdersForCheck(): OrderRecord[] {
-  return readLocalOrders();
-}
-
 export async function attachSquareOrder(orderId: string, squareOrderId: string) {
   const admin = getSupabaseAdmin();
   if (!admin) return;
@@ -528,14 +524,17 @@ export async function markOrderPaid(
     }
   }
 
-  const { error: updateError } = await admin
+  const { data: updated, error: updateError } = await admin
     .from("orders")
     .update({
       payment_status: "paid",
       square_payment_id: squarePaymentId ?? order.square_payment_id,
     })
-    .eq("id", orderId);
+    .eq("id", orderId)
+    .eq("payment_status", "unpaid")
+    .select("id");
   if (updateError) throw new Error(updateError.message);
+  if (!updated?.length) return { newlyPaid: false, isPaid: true };
 
   const { data: items } = await admin
     .from("order_items")

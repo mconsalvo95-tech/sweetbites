@@ -52,6 +52,7 @@ export function minWantedOnIso(d = new Date()): string {
 
 export function isAllowedWantedOn(iso: string, d = new Date(), blockedDates: string[] = []): boolean {
   if (!WANTED_ON_RE.test(iso)) return false;
+  if (addShopDays(iso, 0) !== iso) return false;
   if (iso < minWantedOnIso(d)) return false;
   if (blockedDates.includes(iso)) return false;
   return true;

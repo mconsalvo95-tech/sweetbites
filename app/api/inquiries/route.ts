@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
+import { EMAIL_RE } from "@/lib/format";
 import { InquiryError, submitInquiry, type SubmitInquiryInput } from "@/lib/inquiries";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function POST(request: Request) {
   if (!rateLimit(`inquiry:${clientIp(request)}`, 8, 60 * 60 * 1000)) {
@@ -38,7 +37,7 @@ export async function POST(request: Request) {
     if (err instanceof InquiryError) {
       return NextResponse.json({ error: err.message }, { status: err.status });
     }
-    const message = err instanceof Error ? err.message : "Inquiry failed";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("inquiry failed", err);
+    return NextResponse.json({ error: "Inquiry failed" }, { status: 500 });
   }
 }

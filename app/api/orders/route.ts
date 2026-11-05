@@ -129,6 +129,10 @@ export async function POST(request: Request) {
       message === "Enter the shipping address"
         ? 400
         : 500;
-    return NextResponse.json({ error: message }, { status });
+    if (status === 400) {
+      return NextResponse.json({ error: message }, { status });
+    }
+    console.error("order failed", err);
+    return NextResponse.json({ error: "Order failed" }, { status: 500 });
   }
 }

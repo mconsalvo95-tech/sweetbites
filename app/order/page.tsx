@@ -18,10 +18,16 @@ export default function OrderPage() {
   const [activeSlug, setActiveSlug] = useState(ALL_SLUG);
 
   useEffect(() => {
-    void fetchCatalog().then((catalog) => {
-      setCategories(catalog.categories);
-      setProducts(catalog.products);
-    });
+    void fetchCatalog()
+      .then((catalog) => {
+        setCategories(catalog.categories);
+        setProducts(catalog.products);
+      })
+      .catch((err) => {
+        console.error("catalog load failed", err);
+        setCategories([]);
+        setProducts([]);
+      });
   }, []);
 
   const visibleCategories = useMemo(() => {

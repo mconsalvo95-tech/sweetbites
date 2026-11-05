@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { markOrderPaid, orderStatusToken } from "@/lib/orders";
+import { siteUrl } from "@/lib/mail";
 import { squareEnabled } from "@/lib/square";
-
-function site() {
-  return process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "https://sweetbites.shop";
-}
 
 function statusRedirect(orderId: string, query: Record<string, string>) {
   const q = new URLSearchParams(query);
@@ -13,13 +10,13 @@ function statusRedirect(orderId: string, query: Record<string, string>) {
   } catch {
     /* dev without service role */
   }
-  return `${site()}/order-status/${orderId}?${q.toString()}`;
+  return `${siteUrl()}/order-status/${orderId}?${q.toString()}`;
 }
 
 export async function GET(request: NextRequest) {
   const orderId = request.nextUrl.searchParams.get("order_id");
   if (!orderId) {
-    return NextResponse.redirect(`${site()}/cart?canceled=1`);
+    return NextResponse.redirect(`${siteUrl()}/cart?canceled=1`);
   }
   if (!squareEnabled()) {
     return NextResponse.redirect(statusRedirect(orderId, {}));

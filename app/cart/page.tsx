@@ -241,6 +241,12 @@ export default function CartPage() {
         lang,
       );
     }
+    if (err === "Too many requests") {
+      return t("Too many tries. Try again later.", "Demasiados intentos. Inténtalo más tarde.", lang);
+    }
+    if (err === "Promo check failed") {
+      return t("Couldn’t check that code", "No se pudo verificar el código", lang);
+    }
     return t("That code isn’t valid", "Ese código no es válido", lang);
   };
 

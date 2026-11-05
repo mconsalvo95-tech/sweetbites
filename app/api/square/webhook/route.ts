@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { markOrderPaid } from "@/lib/orders";
+import { siteUrl } from "@/lib/mail";
 import { verifySquareSignature } from "@/lib/square";
 
 export async function POST(request: NextRequest) {
@@ -9,7 +10,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const header = request.headers.get("x-square-hmacsha256-signature") ?? "";
-  const url = `${process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "")}/api/square/webhook`;
+  const url = `${siteUrl()}/api/square/webhook`;
   if (!verifySquareSignature(url, raw, header, secret)) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }

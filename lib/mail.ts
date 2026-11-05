@@ -5,7 +5,7 @@ import {
   type OrderEmailInput,
 } from "./order-email";
 
-function siteUrl() {
+export function siteUrl() {
   const explicit = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
   if (explicit) return explicit;
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;

@@ -26,6 +26,12 @@ describe("isAllowedWantedOn", () => {
   it("accepts the minimum date when it is not blocked", () => {
     expect(isAllowedWantedOn("2026-10-03", fixedToday)).toBe(true);
   });
+
+  it("rejects impossible calendar dates even after the minimum", () => {
+    const earlyYear = new Date("2026-01-01T18:00:00Z");
+    expect(isAllowedWantedOn("2026-02-30", earlyYear)).toBe(false);
+    expect(isAllowedWantedOn("2026-13-01", earlyYear)).toBe(false);
+  });
 });
 
 describe("nextAllowedWantedOn", () => {

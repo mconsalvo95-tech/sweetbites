@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "crypto";
+import { siteUrl } from "./mail";
 
 const SQUARE_VERSION = "2025-01-23";
 
@@ -12,13 +13,6 @@ function squareHost() {
   return process.env.SQUARE_ENV === "production"
     ? "https://connect.squareup.com"
     : "https://connect.squareupsandbox.com";
-}
-
-function siteUrl() {
-  const explicit = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
-  if (explicit) return explicit;
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return "http://localhost:3000";
 }
 
 async function squareFetch(path: string, init?: RequestInit) {
@@ -98,11 +92,6 @@ export async function fetchSquareOrderState(squareOrderId: string): Promise<{
     paid: squareOrderPaid(order),
     amountCents: order?.total_money?.amount ?? 0,
   };
-}
-
-export async function squareOrderIsPaid(squareOrderId: string) {
-  const { paid } = await fetchSquareOrderState(squareOrderId);
-  return paid;
 }
 
 export function squarePaymentMatches(
